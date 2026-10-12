@@ -53,8 +53,9 @@ jobs:
           fi
           grep -q "^## $version" CHANGELOG.md || { echo "::error::CHANGELOG.md has no section for $version"; exit 1; }
           test -s keys/customos-ota-ca.cert.pem || { echo "::error::keys/customos-ota-ca.cert.pem is missing (docs/SIGNING.md)"; exit 1; }
-          test -n "$CUSTOMOS_SIGNING_CERT" && test -n "$CUSTOMOS_SIGNING_KEY" \
-            || { echo "::error::Secrets CUSTOMOS_SIGNING_CERT and CUSTOMOS_SIGNING_KEY are not set (docs/SIGNING.md)"; exit 1; }
+          if [ -z "$CUSTOMOS_SIGNING_CERT" ] || [ -z "$CUSTOMOS_SIGNING_KEY" ]; then
+            echo "::error::Secrets CUSTOMOS_SIGNING_CERT and CUSTOMOS_SIGNING_KEY are not set (docs/SIGNING.md)"; exit 1
+          fi
           printf '%s\n' "$CUSTOMOS_SIGNING_CERT" | openssl verify -CAfile keys/customos-ota-ca.cert.pem \
             || { echo "::error::The signing certificate is not issued by keys/customos-ota-ca.cert.pem"; exit 1; }
 

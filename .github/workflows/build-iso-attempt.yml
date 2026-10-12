@@ -70,8 +70,10 @@ jobs:
           # Linking LLVM and Qt needs more memory than a 2-core runner has.
           mem_gb=$(( $(awk '/MemTotal/ {print $2}' /proc/meminfo) / 1048576 ))
           if [ "$RUNNER_ENVIRONMENT" = github-hosted ] && [ "$mem_gb" -lt 15 ]; then
-            sudo fallocate -l 8G "$work/swapfile" && sudo chmod 600 "$work/swapfile" \
-              && sudo mkswap "$work/swapfile" >/dev/null && sudo swapon "$work/swapfile" || true
+            if ! { sudo fallocate -l 8G "$work/swapfile" && sudo chmod 600 "$work/swapfile" \
+                   && sudo mkswap "$work/swapfile" >/dev/null && sudo swapon "$work/swapfile"; }; then
+              echo "::warning::Could not add swap space"
+            fi
           fi
           sudo apt-get update -q
           sudo apt-get install -y -q --no-install-recommends build-essential bc cpio file git libncurses-dev \
