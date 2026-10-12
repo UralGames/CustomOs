@@ -25,7 +25,7 @@ name: Build ISO
 on:
   workflow_dispatch:
     inputs:
-      retention_days:
+      retention_days: 7
         description: Days to keep the ISO artifact (artifacts of private repositories count against the account's storage)
         type: number
         default: 7
