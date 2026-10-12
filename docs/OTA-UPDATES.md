@@ -100,9 +100,12 @@ Settings › System › Updates / Meridian Update / customos-update  ──D-Bus
    Otherwise it is marked bad and the computer restarts into the previous
    version.
 7. **Result.** After the restart the update service compares the slot that
-   actually booted with the one it installed, reads the health check's
-   verdict, and records the outcome in the history: either *Installed*, or
-   *Rolled back* with the reason.
+   actually booted with the one it installed. It reads the health check's
+   verdict from `/data/customos/update/last-trial.env` (kept until the next
+   trial boot) and records the outcome in the history: either *Installed*,
+   or *Rolled back* with the reason. The health check also writes the reason
+   to the kernel log before the automatic restart. It
+   appears on screen only when the kernel command line lacks `quiet`.
 
 ## A/B disk layout (installed systems)
 

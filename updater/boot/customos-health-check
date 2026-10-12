@@ -15,7 +15,10 @@
 #    back, and must not silently downgrade the system.
 #
 # The verdict is written to /data/customos/update/last-boot.env for the update
-# service (customos-updated), which records it in the update history.
+# service (customos-updated), which records it in the update history. A trial
+# verdict also goes to last-trial.env: after a failed trial, the next (normal)
+# boot of the previous slot replaces last-boot.env, but the service still
+# needs to say why the new version was rejected.
 
 export PATH=/usr/sbin:/usr/bin:/sbin:/bin
 BOOT_ENV=/run/customos/boot.env
@@ -33,6 +36,13 @@ SETTLE=20
 [ -f /etc/customos/health.conf ] && . /etc/customos/health.conf
 
 log() { echo "customos-health-check: $*"; }
+# Also in the kernel log, which reaches the console unless the system was
+# started with "quiet", so the reason for an automatic restart is visible.
+log_console() {
+    log "$*"
+    [ -w /dev/kmsg ] && echo "<3>customos-health-check: $*" > /dev/kmsg 2>/dev/null
+    return 0
+}
 
 report() {   # report good|bad REASON
     mkdir -p "$STATE"
@@ -42,7 +52,12 @@ report() {   # report good|bad REASON
         echo "RESULT=$1"
         echo "REASON=\"$(printf '%s' "$2" | tr -d '"\n')\""
         echo "TIME=$(date +%s)"
-    } > "$STATE/last-boot.env.new" && mv -f "$STATE/last-boot.env.new" "$STATE/last-boot.env"
+    } > "$STATE/last-boot.env.new" || return 1
+    if [ "$trial" -eq 1 ]; then
+        cp -f "$STATE/last-boot.env.new" "$STATE/last-trial.env.new" \
+            && mv -f "$STATE/last-trial.env.new" "$STATE/last-trial.env"
+    fi
+    mv -f "$STATE/last-boot.env.new" "$STATE/last-boot.env"
     sync
 }
 
@@ -135,10 +150,10 @@ if [ -z "$reason" ]; then
     exit 0
 fi
 
-log "slot $SLOT ($VERSION) FAILED its trial boot: $reason"
+log_console "slot $SLOT ($VERSION) FAILED its trial boot: $reason"
 report bad "$reason"
 rm -f "$STATE/pending-slot"
 mark bad
-log "restarting into the previous version"
+log_console "restarting into the previous version"
 systemctl reboot
 exit 1

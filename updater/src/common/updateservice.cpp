@@ -758,12 +758,19 @@ void UpdateService::reconcileAfterBoot()
         return;
     }
     // Back on the old slot: the new one did not boot or failed its health check.
-    const BootReport r = m_store.lastBootReport();
-    QString reason;
-    if (r.isValid() && r.slot == p.targetSlot && r.result == QLatin1String("bad"))
-        reason = r.reason;
-    else
-        reason = tr("slot %1 did not finish starting").arg(p.targetSlot);
+    // The trial verdict is kept apart from last-boot.env, which this boot's
+    // health check may already have replaced. A verdict about an earlier
+    // installation into the same slot doesn't count.
+    BootReport r = m_store.lastTrialReport();
+    if (!r.isValid())
+        r = m_store.lastBootReport();
+    // (The report's version may carry "+<build id>".)
+    const QString reportVersion = r.version.section(QLatin1Char('+'), 0, 0);
+    const bool aboutThisChange = r.isValid() && r.slot == p.targetSlot && r.result == QLatin1String("bad")
+                                 && (!p.when.isValid() || !r.when.isValid() || r.when >= p.when)
+                                 && (p.toVersion.isEmpty() || reportVersion.isEmpty()
+                                     || reportVersion == p.toVersion.section(QLatin1Char('+'), 0, 0));
+    const QString reason = aboutThisChange ? r.reason : tr("slot %1 did not finish starting").arg(p.targetSlot);
     m_store.resolveHistory(p.kind, QStringLiteral("rolled-back"), p.fromVersion, p.toVersion, reason);
     m_store.clearPending();
     saveState();

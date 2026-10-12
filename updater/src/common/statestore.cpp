@@ -125,10 +125,10 @@ void StateStore::resolveHistory(const QString &event, const QString &result, con
     addHistory(event, result, fromVersion, toVersion, message);
 }
 
-BootReport StateStore::lastBootReport() const
+static BootReport readBootReport(const QString &path)
 {
     BootReport r;
-    QFile f(m_dir + QStringLiteral("/last-boot.env"));
+    QFile f(path);
     if (!f.open(QIODevice::ReadOnly | QIODevice::Text))
         return r;
     while (!f.atEnd()) {
@@ -147,4 +147,14 @@ BootReport StateStore::lastBootReport() const
         else if (key == QLatin1String("TIME")) r.when = QDateTime::fromSecsSinceEpoch(value.toLongLong()).toUTC();
     }
     return r;
+}
+
+BootReport StateStore::lastBootReport() const
+{
+    return readBootReport(m_dir + QStringLiteral("/last-boot.env"));
+}
+
+BootReport StateStore::lastTrialReport() const
+{
+    return readBootReport(m_dir + QStringLiteral("/last-trial.env"));
 }

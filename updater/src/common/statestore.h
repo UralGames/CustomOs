@@ -18,8 +18,10 @@ struct PendingChange
     bool isValid() const { return !kind.isEmpty() && !targetSlot.isEmpty(); }
 };
 
-// The verdict of customos-health-check about one boot, written to
-// <state>/last-boot.env as KEY=VALUE lines (see boot/customos-health-check).
+// The verdict of customos-health-check about one boot, written as KEY=VALUE
+// lines (see boot/customos-health-check) to <state>/last-boot.env for every
+// boot, and also to <state>/last-trial.env for the trial boot of a new slot.
+// The trial verdict survives the next, normal boot of the previous slot.
 struct BootReport
 {
     QString slot;
@@ -66,6 +68,7 @@ public:
     QJsonArray history() const { return m_history; }
 
     BootReport lastBootReport() const;
+    BootReport lastTrialReport() const;
 
     static constexpr int MaxHistory = 200;
 

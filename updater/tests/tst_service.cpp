@@ -202,10 +202,13 @@ private slots:
             s.install();
             QTRY_COMPARE_WITH_TIMEOUT(s.state(), UpdateService::State::RebootRequired, 15000);
         }
-        // Slot A (0.4.0) failed its trial and the machine came back on slot B.
-        writeFile(stateDir() + "/last-boot.env",
-                  "SLOT=A\nVERSION=0.4.0\nRESULT=bad\nREASON=\"did not start: meridian-login.service\"\nTIME="
-                      + QByteArray::number(QDateTime::currentSecsSinceEpoch()) + "\n");
+        // Slot A (0.4.0) failed its trial and the machine came back on slot B,
+        // whose normal boot has already replaced last-boot.env.
+        const QByteArray now = QByteArray::number(QDateTime::currentSecsSinceEpoch());
+        writeFile(stateDir() + "/last-trial.env",
+                  "SLOT=A\nVERSION=0.4.0+3f9c2a1b7e4d\nRESULT=bad\nREASON=\"did not start: meridian-login.service\"\nTIME="
+                      + now + "\n");
+        writeFile(stateDir() + "/last-boot.env", "SLOT=B\nVERSION=0.3.0\nRESULT=good\nREASON=\"normal start\"\nTIME=" + now + "\n");
         boot("0.3.0", "B", "boot-4");
         UpdateService s(config(), QDBusConnection::sessionBus());
         s.start();
@@ -217,6 +220,32 @@ private slots:
         QCOMPARE(history(s).last().toObject().value("result").toString(), QStringLiteral("rolled-back"));
         s.dismissError();
         QVERIFY(s.state() != UpdateService::State::Error);
+    }
+
+    void staleTrialVerdictIsIgnored()
+    {
+        boot("0.3.0", "B", "boot-3");
+        // An earlier version in slot A failed its trial long ago.
+        writeFile(stateDir() + "/last-trial.env",
+                  "SLOT=A\nVERSION=0.3.5\nRESULT=bad\nREASON=\"did not start: old reason\"\nTIME="
+                      + QByteArray::number(QDateTime::currentSecsSinceEpoch() - 86400) + "\n");
+        publish("0.4.0", fakeBundle("0.4.0"));
+        {
+            UpdateService s(config(), QDBusConnection::sessionBus());
+            s.start();
+            s.checkForUpdates();
+            QTRY_COMPARE_WITH_TIMEOUT(s.state(), UpdateService::State::UpdateAvailable, 10000);
+            s.install();
+            QTRY_COMPARE_WITH_TIMEOUT(s.state(), UpdateService::State::RebootRequired, 15000);
+        }
+        // 0.4.0 never got as far as the health check (e.g. a kernel panic).
+        boot("0.3.0", "B", "boot-4");
+        UpdateService s(config(), QDBusConnection::sessionBus());
+        s.start();
+        QCOMPARE(s.state(), UpdateService::State::Error);
+        const QString detail = s.status().value("errorDetail").toString();
+        QVERIFY2(!detail.contains("old reason"), qPrintable(detail));
+        QVERIFY2(detail.contains("did not finish starting"), qPrintable(detail));
     }
 
     void untrustedSignatureIsRejected()
