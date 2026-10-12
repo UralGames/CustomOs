@@ -1,0 +1,21 @@
+// CustomOS polkit policy.
+// Administrators (wheel) and the live user may manage networking, power,
+// time and host name from the desktop without extra prompts. The Meridian
+// desktop has no polkit authentication agent, so anything not allowed here
+// is denied rather than prompting.
+polkit.addRule(function(action, subject) {
+    if (!subject.local || !subject.active)
+        return polkit.Result.NOT_HANDLED;
+    var admin = subject.isInGroup("wheel") || subject.user == "live";
+    if (action.id.indexOf("org.freedesktop.NetworkManager.") == 0 && subject.isInGroup("netdev"))
+        return polkit.Result.YES;
+    if (!admin)
+        return polkit.Result.NOT_HANDLED;
+    if (action.id.indexOf("org.freedesktop.NetworkManager.") == 0 ||
+        action.id.indexOf("org.freedesktop.login1.") == 0 ||
+        action.id.indexOf("org.freedesktop.timedate1.") == 0 ||
+        action.id.indexOf("org.freedesktop.hostname1.") == 0 ||
+        action.id.indexOf("org.freedesktop.locale1.") == 0)
+        return polkit.Result.YES;
+    return polkit.Result.NOT_HANDLED;
+});

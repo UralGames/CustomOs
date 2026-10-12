@@ -1,0 +1,13 @@
+config BR2_PACKAGE_SWAYLOCK
+	bool "swaylock"
+	depends on BR2_PACKAGE_WAYLAND
+	depends on BR2_PACKAGE_LINUX_PAM
+	select BR2_PACKAGE_CAIRO
+	select BR2_PACKAGE_CAIRO_PNG
+	select BR2_PACKAGE_GDK_PIXBUF # JPEG wallpapers on the lock screen
+	select BR2_PACKAGE_LIBXKBCOMMON
+	select BR2_PACKAGE_WAYLAND_PROTOCOLS
+	help
+	  Screen locker for Wayland (ext-session-lock-v1).
+
+	  https://github.com/swaywm/swaylock

@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Text Editor
+GenericName=Text Editor
+Comment=Create and edit plain text files
+Exec=meridian-editor %F
+Icon=meridian-editor
+Terminal=false
+Categories=Utility;TextEditor;Core;
+MimeType=text/plain;text/markdown;text/x-csrc;text/x-chdr;text/x-c++src;text/x-python;text/x-shellscript;application/x-shellscript;application/json;application/xml;text/xml;text/css;text/html;text/x-log;text/csv;application/x-desktop;
+Keywords=notepad;text;edit;write;
+StartupWMClass=meridian-editor

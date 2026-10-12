@@ -1,0 +1,22 @@
+config BR2_PACKAGE_LABWC
+	bool "labwc"
+	depends on BR2_PACKAGE_WLROOTS
+	depends on BR2_PACKAGE_HOST_RUSTC_TARGET_ARCH_SUPPORTS # librsvg
+	select BR2_PACKAGE_CAIRO
+	select BR2_PACKAGE_CAIRO_PNG
+	select BR2_PACKAGE_LIBGLIB2
+	select BR2_PACKAGE_LIBPNG
+	select BR2_PACKAGE_LIBRSVG
+	select BR2_PACKAGE_LIBSFDO
+	select BR2_PACKAGE_LIBXML2
+	select BR2_PACKAGE_PANGO
+	select BR2_PACKAGE_XKEYBOARD_CONFIG # runtime keymaps
+	help
+	  labwc: a stacking Wayland compositor built on wlroots. It is
+	  the window manager of the Meridian desktop (decorations,
+	  snapping, virtual desktops, Alt+Tab, keyboard shortcuts).
+
+	  https://labwc.github.io
+
+comment "labwc needs wlroots"
+	depends on !BR2_PACKAGE_WLROOTS

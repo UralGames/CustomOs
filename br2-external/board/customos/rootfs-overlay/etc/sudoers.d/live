@@ -1,0 +1,3 @@
+# Live session: the live user may administer the system without a password
+# (needed by the installer). Removed by the installer.
+live ALL=(ALL:ALL) NOPASSWD: ALL

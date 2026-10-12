@@ -1,0 +1,204 @@
+#!/bin/sh
+# customos-install: installs the running live system onto a disk.
+#
+#   customos-install --disk /dev/sdX --confirm /dev/sdX --user NAME \
+#                    --fullname "Full Name" --hostname NAME  < password
+#
+# The password is read from standard input (one line). The whole disk is
+# erased: --confirm must repeat the --disk value, so nothing is wiped by
+# accident. Progress lines on stdout look like:  PROGRESS <percent> <message>
+#
+# Layout (GPT), bootable from both legacy BIOS and UEFI firmware:
+#   1   1 MiB  BIOS boot partition (GRUB core image for BIOS)
+#   2 512 MiB  EFI system partition, FAT32, mounted at /boot
+#              (kernel, GRUB modules and configuration, EFI/BOOT/BOOTX64.EFI)
+#   3   rest   ext4 root file system
+set -eu
+
+DISK=""; CONFIRM=""; USERNAME=""; FULLNAME=""; HOSTNAME_NEW="customos"
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --disk) DISK="$2"; shift 2 ;;
+        --confirm) CONFIRM="$2"; shift 2 ;;
+        --user) USERNAME="$2"; shift 2 ;;
+        --fullname) FULLNAME="$2"; shift 2 ;;
+        --hostname) HOSTNAME_NEW="$2"; shift 2 ;;
+        *) echo "ERROR Unknown option $1"; exit 2 ;;
+    esac
+done
+
+progress() { echo "PROGRESS $1 $2"; }
+fail() { echo "ERROR $*"; exit 1; }
+warn() { echo "WARNING $*"; }
+
+TARGET=/mnt/customos-target
+cleanup() {
+    sync 2>/dev/null || true
+    umount "$TARGET/proc" "$TARGET/sys" "$TARGET/dev" 2>/dev/null || true
+    umount "$TARGET/boot" 2>/dev/null || true
+    umount "$TARGET" 2>/dev/null || true
+}
+trap cleanup EXIT
+
+# ---- checks -------------------------------------------------------------------
+[ "$(id -u)" -eq 0 ] || fail "The installer must run as root."
+[ -n "$DISK" ] && [ -b "$DISK" ] || fail "No disk selected."
+[ "$CONFIRM" = "$DISK" ] || fail "The erase confirmation does not match the selected disk."
+echo "$USERNAME" | grep -Eq '^[a-z_][a-z0-9_-]{0,31}$' || fail "Invalid user name."
+[ "$USERNAME" != "root" ] && [ "$USERNAME" != "live" ] || fail "Choose a different user name."
+echo "$HOSTNAME_NEW" | grep -Eq '^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$' || fail "Invalid computer name."
+IFS= read -r PASSWORD || true
+[ "${#PASSWORD}" -ge 4 ] || fail "The password is too short."
+
+[ "$(lsblk -dno TYPE "$DISK")" = "disk" ] || fail "$DISK is not a whole disk."
+size=$(lsblk -bdno SIZE "$DISK")
+[ "$size" -ge $((8 * 1024 * 1024 * 1024)) ] || fail "The disk is too small (at least 8 GB is needed)."
+if lsblk -nro MOUNTPOINT "$DISK" | grep -q .; then
+    fail "A partition on $DISK is in use (mounted). Unmount it first."
+fi
+for tool in sgdisk wipefs mkfs.vfat mkfs.ext4 rsync blkid grub-install useradd chpasswd; do
+    command -v "$tool" >/dev/null 2>&1 || fail "The tool '$tool' is missing from the live system."
+done
+
+case "$DISK" in
+    *nvme*|*mmcblk*|*loop*) PART="${DISK}p" ;;
+    *) PART="$DISK" ;;
+esac
+# Partition 1 is the BIOS boot partition (raw GRUB core image, no file system).
+P_ESP="${PART}2"; P_ROOT="${PART}3"
+
+if [ -d /sys/firmware/efi ]; then FIRMWARE=uefi; else FIRMWARE=bios; fi
+
+# ---- partition and format ---------------------------------------------------
+progress 2 "Erasing $DISK"
+wipefs -a "$DISK" >/dev/null
+sgdisk --zap-all "$DISK" >/dev/null 2>&1 || true
+progress 5 "Creating partitions"
+sgdisk -n1:0:+1M   -t1:ef02 -c1:"BIOS boot" \
+       -n2:0:+512M -t2:ef00 -c2:"EFI system" \
+       -n3:0:0     -t3:8304 -c3:"CustomOS" "$DISK" >/dev/null \
+    || fail "Could not create the partition table on $DISK."
+partprobe "$DISK" 2>/dev/null || blockdev --rereadpt "$DISK" 2>/dev/null || true
+udevadm settle 2>/dev/null || sleep 2
+for _ in 1 2 3 4 5 6 7 8 9 10; do [ -b "$P_ROOT" ] && break; sleep 1; done
+[ -b "$P_ESP" ] && [ -b "$P_ROOT" ] || fail "The new partitions did not appear."
+
+progress 8 "Formatting"
+mkfs.vfat -F 32 -n EFI "$P_ESP" >/dev/null || fail "Could not format the EFI partition."
+mkfs.ext4 -q -F -L customos "$P_ROOT" || fail "Could not format the system partition."
+
+mkdir -p "$TARGET"
+mount "$P_ROOT" "$TARGET"
+mkdir -p "$TARGET/boot"
+mount "$P_ESP" "$TARGET/boot"
+
+# ---- copy the system ------------------------------------------------------------
+progress 10 "Copying the system"
+# -a without ACL/xattr flags: the live root is a RAM file system and the
+# live rsync may be built without ACL support.
+rsync -aH --numeric-ids --info=progress2 --no-inc-recursive \
+    --exclude=/proc/ --exclude=/sys/ --exclude=/dev/ --exclude=/run/ --exclude=/tmp/ \
+    --exclude=/mnt/ --exclude=/media/ --exclude=/lost+found/ --exclude=/var/tmp/ \
+    --exclude=/var/log/journal/ --exclude=/home/live/ --exclude=/root/.cache/ \
+    --exclude=/boot/ --exclude=/init \
+    / "$TARGET/" 2>/tmp/customos-install-rsync.log | tr '\r' '\n' | while read -r line; do
+        pct=$(echo "$line" | sed -n 's/.* \([0-9]\{1,3\}\)% .*/\1/p')
+        [ -n "$pct" ] && progress $((10 + pct * 75 / 100)) "Copying the system ($pct%)"
+    done
+# The pipeline above hides rsync's exit status, so check the result directly.
+for f in usr/bin/meridian-shell usr/bin/labwc etc/passwd usr/lib/systemd/systemd; do
+    [ -e "$TARGET/$f" ] || fail "Copying the system failed ($f is missing): $(tail -n 3 /tmp/customos-install-rsync.log 2>/dev/null | tr '\n' ' ')"
+done
+mkdir -p "$TARGET/proc" "$TARGET/sys" "$TARGET/dev" "$TARGET/run" "$TARGET/tmp" \
+         "$TARGET/mnt" "$TARGET/media" "$TARGET/var/tmp" "$TARGET/home"
+chmod 1777 "$TARGET/tmp" "$TARGET/var/tmp"
+
+# Kernel (GRUB loads it from the EFI partition, which is /boot)
+KERNEL=""
+for k in /boot/bzImage /run/customos/medium/boot/bzImage; do
+    [ -f "$k" ] && { KERNEL="$k"; break; }
+done
+[ -n "$KERNEL" ] || fail "The kernel image (/boot/bzImage) is missing from the live system."
+cp "$KERNEL" "$TARGET/boot/bzImage"
+
+# ---- configure ------------------------------------------------------------------
+progress 87 "Configuring the system"
+mount --bind /proc "$TARGET/proc"
+mount --bind /sys "$TARGET/sys"
+mount --bind /dev "$TARGET/dev"
+
+ROOT_UUID=$(blkid -s UUID -o value "$P_ROOT")
+ROOT_PARTUUID=$(blkid -s PARTUUID -o value "$P_ROOT")
+EFI_UUID=$(blkid -s UUID -o value "$P_ESP")
+cat > "$TARGET/etc/fstab" <<EOF
+# /etc/fstab: created by the CustomOS installer
+UUID=$ROOT_UUID  /      ext4  defaults,noatime  0 1
+UUID=$EFI_UUID   /boot  vfat  umask=0077        0 2
+EOF
+
+echo "$HOSTNAME_NEW" > "$TARGET/etc/hostname"
+cat > "$TARGET/etc/hosts" <<EOF
+127.0.0.1   localhost
+127.0.1.1   $HOSTNAME_NEW
+::1         localhost
+EOF
+
+# Remove everything that makes this the live image.
+rm -f "$TARGET/etc/customos-live" "$TARGET/etc/sudoers.d/live" \
+      "$TARGET/usr/share/applications/meridian-installer.desktop"
+sed -i '/^autologin/d' "$TARGET/etc/meridian/login.conf" 2>/dev/null || true
+chroot "$TARGET" userdel -r live >/dev/null 2>&1 || chroot "$TARGET" userdel live >/dev/null 2>&1 || true
+: > "$TARGET/etc/machine-id"
+
+progress 90 "Creating your account"
+chroot "$TARGET" useradd -m -U -G wheel,audio,video,input,render -s /bin/bash -c "$FULLNAME" "$USERNAME" \
+    || fail "Could not create the user account."
+printf '%s:%s\n' "$USERNAME" "$PASSWORD" | chroot "$TARGET" chpasswd || fail "Could not set the password."
+# Lock root's password: administrators use sudo.
+chroot "$TARGET" passwd -l root >/dev/null 2>&1 || true
+
+# ---- boot loader ---------------------------------------------------------------
+# GRUB is installed for both firmware types so the disk also boots if the
+# virtual machine is later switched between BIOS and EFI. The one matching
+# the current firmware must succeed; the other is best effort.
+progress 94 "Installing the boot loader"
+efi_ok=0; bios_ok=0
+grub-install --target=x86_64-efi --efi-directory="$TARGET/boot" --boot-directory="$TARGET/boot" \
+    --removable --no-nvram >/tmp/customos-install-grub.log 2>&1 && efi_ok=1
+grub-install --target=i386-pc --boot-directory="$TARGET/boot" "$DISK" \
+    >>/tmp/customos-install-grub.log 2>&1 && bios_ok=1
+if [ "$FIRMWARE" = uefi ] && [ $efi_ok -ne 1 ]; then
+    fail "Could not install the UEFI boot loader: $(tail -n 2 /tmp/customos-install-grub.log | tr '\n' ' ')"
+fi
+if [ "$FIRMWARE" = bios ] && [ $bios_ok -ne 1 ]; then
+    fail "Could not install the BIOS boot loader: $(tail -n 2 /tmp/customos-install-grub.log | tr '\n' ' ')"
+fi
+[ $efi_ok -eq 1 ] || warn "UEFI boot loader not installed; the disk boots in BIOS mode only."
+[ $bios_ok -eq 1 ] || warn "BIOS boot loader not installed; the disk boots in UEFI mode only."
+
+CMDLINE="root=PARTUUID=$ROOT_PARTUUID rw rootwait quiet loglevel=3 vt.global_cursor_default=0"
+mkdir -p "$TARGET/boot/grub"
+cat > "$TARGET/boot/grub/grub.cfg" <<EOF
+# GRUB configuration written by the CustomOS installer.
+set timeout=3
+set default=0
+search --no-floppy --fs-uuid --set=root $EFI_UUID
+if [ "\${grub_platform}" = "efi" ]; then insmod efi_gop; fi
+set menu_color_normal=light-gray/black
+set menu_color_highlight=black/cyan
+
+menuentry "CustomOS" {
+    linux /bzImage $CMDLINE
+}
+menuentry "CustomOS (safe graphics)" {
+    linux /bzImage $CMDLINE nomodeset meridian.software=1
+}
+menuentry "CustomOS (text console)" {
+    linux /bzImage $CMDLINE systemd.unit=multi-user.target
+}
+EOF
+
+progress 98 "Finishing"
+sync
+progress 100 "Installation complete"
+echo "DONE"

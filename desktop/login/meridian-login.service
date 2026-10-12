@@ -1,0 +1,27 @@
+[Unit]
+Description=Meridian sign-in (graphical login)
+Documentation=file:///usr/share/doc/customos/README
+After=systemd-user-sessions.service getty@tty1.service systemd-logind.service
+Conflicts=getty@tty1.service
+Wants=systemd-logind.service
+
+[Service]
+ExecStartPre=-/bin/sh -c 'command -v psplash-write >/dev/null && psplash-write QUIT'
+ExecStart=/usr/libexec/meridian-login
+Restart=always
+RestartSec=2
+# Own the first virtual terminal like a getty would.
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
+StandardInput=tty
+StandardOutput=journal
+StandardError=journal
+UtmpIdentifier=tty1
+UtmpMode=login
+KillMode=process
+
+[Install]
+Alias=display-manager.service
+WantedBy=graphical.target

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Install CustomOS
+Comment=Install the system onto this computer's disk
+Exec=meridian-installer
+Icon=meridian-installer
+Terminal=false
+Categories=System;
+Keywords=install;setup;disk;
+StartupWMClass=meridian-installer
+TryExec=/etc/customos-live

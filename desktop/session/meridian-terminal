@@ -1,0 +1,4 @@
+#!/bin/sh
+# Opens the terminal (foot) with Meridian's colours and font.
+# Any arguments are passed to foot, e.g.:  meridian-terminal --working-directory=/tmp
+exec foot --app-id=meridian-terminal "$@"

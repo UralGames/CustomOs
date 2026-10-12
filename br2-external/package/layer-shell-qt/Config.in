@@ -1,0 +1,15 @@
+config BR2_PACKAGE_LAYER_SHELL_QT
+	bool "layer-shell-qt"
+	depends on BR2_PACKAGE_QT6
+	depends on BR2_PACKAGE_QT6_GL_SUPPORTS # qt6wayland
+	select BR2_PACKAGE_EXTRA_CMAKE_MODULES
+	select BR2_PACKAGE_QT6WAYLAND
+	select BR2_PACKAGE_QT6DECLARATIVE
+	select BR2_PACKAGE_QT6DECLARATIVE_QUICK
+	select BR2_PACKAGE_WAYLAND_PROTOCOLS
+	select BR2_PACKAGE_LIBXKBCOMMON
+	help
+	  Qt integration of the wlr-layer-shell protocol, used by the
+	  Meridian shell for its taskbar, wallpaper and panels.
+
+	  https://invent.kde.org/plasma/layer-shell-qt

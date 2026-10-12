@@ -1,0 +1,7 @@
+config BR2_PACKAGE_LIBSFDO
+	bool "libsfdo"
+	help
+	  Collection of freedesktop.org specification implementations
+	  (desktop entries, icon themes). Used by labwc for window icons.
+
+	  https://gitlab.freedesktop.org/vyivel/libsfdo

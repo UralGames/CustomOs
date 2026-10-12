@@ -1,0 +1,10 @@
+# PAM configuration for signing in through meridian-login (the graphical
+# sign-in screen).
+auth      required   pam_unix.so
+account   required   pam_unix.so
+password  required   pam_unix.so sha512 shadow
+session   required   pam_unix.so
+session   optional   pam_loginuid.so
+session   optional   pam_keyinit.so force revoke
+session   optional   pam_env.so
+session   optional   pam_systemd.so

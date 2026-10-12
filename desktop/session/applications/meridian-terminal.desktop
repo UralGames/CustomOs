@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Terminal
+GenericName=Terminal
+Comment=Use the command line
+Exec=meridian-terminal
+Icon=meridian-terminal
+Terminal=false
+Categories=System;TerminalEmulator;Core;
+Keywords=shell;prompt;command;console;bash;
+StartupWMClass=meridian-terminal

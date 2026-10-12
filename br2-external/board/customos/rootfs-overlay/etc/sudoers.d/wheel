@@ -1,0 +1,2 @@
+# Members of the wheel group (the account created by the installer) are administrators.
+%wheel ALL=(ALL:ALL) ALL
