@@ -1,0 +1,34 @@
+config BR2_PACKAGE_MERIDIAN_DESKTOP
+	bool "meridian-desktop"
+	depends on BR2_PACKAGE_QT6
+	depends on BR2_PACKAGE_QT6_GL_SUPPORTS
+	depends on BR2_PACKAGE_SYSTEMD
+	depends on (BR2_ENABLE_LOCALE && BR2_USE_WCHAR) # linux-pam
+	depends on !BR2_STATIC_LIBS # linux-pam
+	depends on BR2_USE_MMU # linux-pam
+	depends on BR2_TOOLCHAIN_GCC_AT_LEAST_4_9 # linux-pam
+	# Selected rather than depended on: "depends on" linux-pam plus
+	# "select foot" formed a Kconfig dependency loop through
+	# util-linux, piglit and wayland.
+	select BR2_PACKAGE_LINUX_PAM
+	select BR2_PACKAGE_QT6BASE_GUI
+	select BR2_PACKAGE_QT6BASE_DBUS
+	select BR2_PACKAGE_QT6BASE_NETWORK
+	select BR2_PACKAGE_QT6BASE_LINUXFB # greeter
+	select BR2_PACKAGE_QT6BASE_FONTCONFIG
+	select BR2_PACKAGE_QT6BASE_PNG
+	select BR2_PACKAGE_QT6BASE_JPEG
+	select BR2_PACKAGE_QT6DECLARATIVE
+	select BR2_PACKAGE_QT6DECLARATIVE_QUICK
+	select BR2_PACKAGE_QT6SVG
+	select BR2_PACKAGE_QT6WAYLAND
+	select BR2_PACKAGE_LAYER_SHELL_QT
+	select BR2_PACKAGE_LABWC
+	select BR2_PACKAGE_SWAYLOCK
+	select BR2_PACKAGE_GRIM
+	select BR2_PACKAGE_FOOT
+	select BR2_PACKAGE_WLR_RANDR
+	help
+	  The Meridian desktop: shell (taskbar, start menu, quick
+	  settings, notifications), File Manager, Settings, System
+	  Monitor, Text Editor, graphical sign-in and installer.

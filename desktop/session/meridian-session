@@ -1,0 +1,87 @@
+#!/bin/sh
+# meridian-session: starts the Meridian desktop for the logged-in user.
+#
+# Run by meridian-login (after PAM opened a logind session on a VT), or by
+# hand from a text console:  meridian-session
+#
+# Chooses a renderer that works on the machine:
+#  * GPUs with 3D (VMware SVGA with 3D, virtio-gpu with virgl, Intel/AMD):
+#    wlroots' OpenGL ES renderer.
+#  * 2D-only virtual GPUs (VirtualBox VGA, QEMU std/bochs, firmware
+#    framebuffer) or `meridian.software=1` on the kernel command line:
+#    the pixman CPU renderer, and Mesa's llvmpipe for applications.
+#  If the hardware path fails to start, it retries in software mode.
+
+export XDG_SESSION_TYPE=wayland
+export XDG_CURRENT_DESKTOP=Meridian:wlroots
+export XDG_SESSION_DESKTOP=meridian
+export DESKTOP_SESSION=meridian
+
+# Standard user folders.
+for d in Desktop Documents Downloads Music Pictures Videos; do
+    [ -d "$HOME/$d" ] || mkdir -p "$HOME/$d" 2>/dev/null
+done
+
+log_dir="${XDG_STATE_HOME:-$HOME/.local/state}/meridian"
+mkdir -p "$log_dir" 2>/dev/null
+log="$log_dir/session.log"
+[ -f "$log" ] && mv -f "$log" "$log.old" 2>/dev/null
+
+gpu_driver() {
+    for card in /sys/class/drm/card[0-9]; do
+        [ -e "$card/device/driver" ] || continue
+        basename "$(readlink -f "$card/device/driver")"
+        return
+    done
+    echo none
+}
+
+machine="$(cat /sys/class/dmi/id/product_name 2>/dev/null)"
+driver="$(gpu_driver)"
+mode=hardware
+case "$driver" in
+    vboxvideo|bochs|bochs-drm|cirrus|cirrus-qemu|simpledrm|simple-framebuffer|efifb|qxl|none) mode=software ;;
+esac
+grep -qw 'meridian.software=1' /proc/cmdline 2>/dev/null && mode=software
+
+# VirtualBox draws its own pointer in some configurations; software cursors
+# avoid an invisible or doubled cursor there.
+case "$machine" in
+    *VirtualBox*) export WLR_NO_HARDWARE_CURSORS=1 ;;
+esac
+
+# Virtual GPUs start at a small mode (often 1024x768) because there are no
+# guest tools to resize them. Inside a VM, the shell switches to the mode
+# given by meridian.mode=WxH (default 1600x900) until the user picks one in
+# Settings > Display. Real hardware keeps the monitor's preferred mode.
+if systemd-detect-virt -q 2>/dev/null; then
+    vm_mode=$(sed -n 's/.*meridian\.mode=\([0-9]*x[0-9]*\).*/\1/p' /proc/cmdline 2>/dev/null)
+    export MERIDIAN_DEFAULT_MODE="${vm_mode:-1600x900}"
+fi
+
+run_labwc() {
+    echo "meridian-session: driver=$driver machine='$machine' mode=$1 ($(date))" >>"$log"
+    if [ "$1" = software ]; then
+        export WLR_RENDERER=pixman
+        export LIBGL_ALWAYS_SOFTWARE=1
+        export GALLIUM_DRIVER=llvmpipe
+    else
+        unset WLR_RENDERER LIBGL_ALWAYS_SOFTWARE GALLIUM_DRIVER
+    fi
+    export MERIDIAN_RENDERER="$1"
+    labwc >>"$log" 2>&1
+}
+
+start=$(date +%s)
+run_labwc "$mode"
+status=$?
+elapsed=$(( $(date +%s) - start ))
+
+# A compositor that dies within seconds on the hardware path almost always
+# means the GPU driver could not be used: fall back to software rendering.
+if [ "$status" -ne 0 ] && [ "$mode" = hardware ] && [ "$elapsed" -lt 15 ]; then
+    echo "meridian-session: hardware rendering failed (status $status); retrying in software mode" >>"$log"
+    run_labwc software
+    status=$?
+fi
+exit "$status"

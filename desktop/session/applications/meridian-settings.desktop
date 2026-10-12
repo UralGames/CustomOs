@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Settings
+GenericName=System Settings
+Comment=Personalise the desktop and configure the system
+Exec=meridian-settings %F
+Icon=meridian-settings
+Terminal=false
+Categories=Settings;System;Core;
+Keywords=preferences;configuration;wallpaper;theme;display;network;sound;keyboard;mouse;
+StartupWMClass=meridian-settings

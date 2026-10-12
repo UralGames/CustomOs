@@ -1,0 +1,5 @@
+# CustomOS over-the-air updates (applied by `systemctl preset-all` at build time).
+enable rauc.service
+enable customos-updated.service
+enable customos-ota-setup.service
+enable customos-health-check.service

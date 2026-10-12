@@ -1,0 +1,18 @@
+################################################################################
+#
+# extra-cmake-modules
+#
+################################################################################
+
+EXTRA_CMAKE_MODULES_VERSION_MAJOR = 6.18
+EXTRA_CMAKE_MODULES_VERSION = $(EXTRA_CMAKE_MODULES_VERSION_MAJOR).0
+EXTRA_CMAKE_MODULES_SITE = https://download.kde.org/stable/frameworks/$(EXTRA_CMAKE_MODULES_VERSION_MAJOR)
+EXTRA_CMAKE_MODULES_SOURCE = extra-cmake-modules-$(EXTRA_CMAKE_MODULES_VERSION).tar.xz
+EXTRA_CMAKE_MODULES_LICENSE = BSD-3-Clause
+EXTRA_CMAKE_MODULES_LICENSE_FILES = LICENSES/BSD-3-Clause.txt
+EXTRA_CMAKE_MODULES_INSTALL_STAGING = YES
+EXTRA_CMAKE_MODULES_INSTALL_TARGET = NO
+EXTRA_CMAKE_MODULES_CONF_OPTS = -DBUILD_TESTING=OFF -DBUILD_DOC=OFF -DBUILD_HTML_DOCS=OFF \
+	-DBUILD_MAN_DOCS=OFF -DBUILD_QTHELP_DOCS=OFF
+
+$(eval $(cmake-package))

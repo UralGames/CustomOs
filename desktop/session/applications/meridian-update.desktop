@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=Meridian Update
+GenericName=System Update
+Comment=Check for, download and install CustomOS updates
+Exec=meridian-update
+# Shown only where the update service (customos-updater) is installed.
+TryExec=customos-update
+Icon=meridian-update
+Terminal=false
+Categories=System;Settings;
+Keywords=update;upgrade;version;release;rollback;
+StartupWMClass=meridian-update

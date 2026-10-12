@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=System Monitor
+GenericName=Task Manager
+Comment=See CPU, memory and disk use and manage running processes
+Exec=meridian-monitor
+Icon=meridian-monitor
+Terminal=false
+Categories=System;Monitor;Core;
+Keywords=processes;task manager;cpu;memory;ram;disk;kill;
+StartupWMClass=meridian-monitor

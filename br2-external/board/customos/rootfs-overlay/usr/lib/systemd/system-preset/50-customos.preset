@@ -1,0 +1,10 @@
+# Services enabled on CustomOS (applied by `systemctl preset-all` at build time).
+enable meridian-login.service
+enable NetworkManager.service
+enable NetworkManager-wait-online.service
+enable systemd-resolved.service
+enable systemd-timesyncd.service
+enable psplash-start.service
+enable psplash-systemd.service
+disable systemd-networkd.service
+disable getty@tty1.service

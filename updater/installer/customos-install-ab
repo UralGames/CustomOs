@@ -1,0 +1,250 @@
+#!/bin/bash
+# customos-install-ab: install CustomOS onto a disk with the A/B layout that
+# supports over-the-air updates.
+#
+#   customos-install-ab --disk /dev/sdX --confirm /dev/sdX --user NAME \
+#                       --fullname "Full Name" --hostname NAME  < password
+#
+# Same interface as customos-install (the graphical installer drives either):
+# the password is read from standard input (one line), --confirm must repeat
+# --disk, and progress is reported as "PROGRESS <percent> <message>" lines.
+# The WHOLE DISK is erased.
+#
+# Layout (GPT; boots with legacy BIOS and UEFI):
+#   1  bios-boot            1 MiB  GRUB core image for BIOS
+#   2  customos-esp       512 MiB  FAT32: GRUB, grub.cfg (A/B menu), grubenv
+#   3  customos-rootfs-a  SLOT     slot A: the system image (read-only squashfs)
+#   4  customos-rootfs-b  SLOT     slot B: empty until the first update
+#   5  customos-data      rest     ext4: /home, settings and update state
+#
+# The system image is the exact squashfs that update bundles carry
+# (/customos/rootfs.squashfs on the ISO, or CUSTOMOS_IMAGE=<file>), written
+# to slot A byte for byte and read back for verification.
+set -u
+
+DISK=""; CONFIRM=""; USERNAME=""; FULLNAME=""; HOSTNAME_NEW="customos"
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --disk) DISK="$2"; shift 2 ;;
+        --confirm) CONFIRM="$2"; shift 2 ;;
+        --user) USERNAME="$2"; shift 2 ;;
+        --fullname) FULLNAME="$2"; shift 2 ;;
+        --hostname) HOSTNAME_NEW="$2"; shift 2 ;;
+        *) echo "ERROR Unknown option $1"; exit 2 ;;
+    esac
+done
+
+OTA_LIBDIR=${OTA_LIBDIR:-/usr/lib/customos}
+# shellcheck source=../boot/ota-lib.sh
+. "$OTA_LIBDIR/ota-lib.sh" || { echo "ERROR The CustomOS update components are missing from this system."; exit 1; }
+
+progress() { echo "PROGRESS $1 $2"; }
+fail() { echo "ERROR $*"; exit 1; }
+warn() { echo "WARNING $*"; }
+
+T=/mnt/customos-target
+MEDIUM=/run/customos/medium
+MOUNTED_MEDIUM=0
+cleanup() {
+    sync 2>/dev/null
+    for m in "$T/esp" "$T/root/tmp" "$T/root/run" "$T/root/dev" "$T/root/sys" "$T/root/proc" \
+             "$T/root/home" "$T/root/root" "$T/root/var" "$T/root/etc" "$T/root/data" "$T/root"; do
+        mountpoint -q "$m" 2>/dev/null && umount "$m" 2>/dev/null
+    done
+    [ "$MOUNTED_MEDIUM" -eq 1 ] && umount "$MEDIUM" 2>/dev/null
+    return 0
+}
+trap cleanup EXIT
+
+# ---- checks -------------------------------------------------------------------------
+[ "$(id -u)" -eq 0 ] || fail "The installer must run as root."
+[ -n "$DISK" ] && [ -b "$DISK" ] || fail "No disk selected."
+[ "$CONFIRM" = "$DISK" ] || fail "The erase confirmation does not match the selected disk."
+echo "$USERNAME" | grep -Eq '^[a-z_][a-z0-9_-]{0,31}$' || fail "Invalid user name."
+case "$USERNAME" in root|live) fail "Choose a different user name." ;; esac
+echo "$HOSTNAME_NEW" | grep -Eq '^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$' || fail "Invalid computer name."
+IFS= read -r PASSWORD || true
+[ "${#PASSWORD}" -ge 4 ] || fail "The password is too short."
+case "$FULLNAME" in *:*) fail "The full name can't contain ':'." ;; esac
+
+[ "$(lsblk -dno TYPE "$DISK")" = "disk" ] || [ "$(lsblk -dno TYPE "$DISK")" = "loop" ] || fail "$DISK is not a whole disk."
+size=$(lsblk -bdno SIZE "$DISK")
+[ "$size" -ge $((8 * 1024 * 1024 * 1024)) ] || fail "The disk is too small (at least 8 GB is needed)."
+if lsblk -nro MOUNTPOINT "$DISK" | grep -q .; then
+    fail "A partition on $DISK is in use (mounted). Unmount it first."
+fi
+for tool in sgdisk wipefs mkfs.vfat mkfs.ext4 blkid grub-install grub-editenv useradd chpasswd sha256sum dd cmp; do
+    command -v "$tool" >/dev/null 2>&1 || fail "The tool '$tool' is missing from the live system."
+done
+
+# ---- the system image -------------------------------------------------------------
+IMAGE=${CUSTOMOS_IMAGE:-}
+if [ -z "$IMAGE" ]; then
+    if [ -f "$MEDIUM/customos/rootfs.squashfs" ]; then
+        IMAGE=$MEDIUM/customos/rootfs.squashfs
+    else
+        mkdir -p "$MEDIUM"
+        for dev in $(blkid -o device -t TYPE=iso9660) $(blkid -o device -t TYPE=udf); do
+            mount -o ro "$dev" "$MEDIUM" 2>/dev/null || continue
+            if [ -f "$MEDIUM/customos/rootfs.squashfs" ]; then
+                MOUNTED_MEDIUM=1
+                IMAGE=$MEDIUM/customos/rootfs.squashfs
+                break
+            fi
+            umount "$MEDIUM"
+        done
+    fi
+fi
+[ -n "$IMAGE" ] && [ -f "$IMAGE" ] || fail "The CustomOS system image (customos/rootfs.squashfs) was not found on the installation medium."
+IMAGE_SIZE=$(stat -c %s "$IMAGE")
+progress 1 "Checking the installation medium"
+IMAGE_SHA=$(sha256sum "$IMAGE" | cut -d' ' -f1)
+if [ -f "$IMAGE.sha256" ]; then
+    [ "$(cut -d' ' -f1 < "$IMAGE.sha256")" = "$IMAGE_SHA" ] || fail "The installation medium is damaged (system image checksum mismatch). Download the ISO again."
+fi
+
+# Slots: 2 GiB on small disks, 4 GiB from 32 GB, 6 GiB from 128 GB.
+GIB=$((1024 * 1024 * 1024))
+if [ "$size" -ge $((128 * GIB)) ]; then SLOT_MIB=6144
+elif [ "$size" -ge $((32 * GIB)) ]; then SLOT_MIB=4096
+else SLOT_MIB=2048; fi
+[ "$IMAGE_SIZE" -le $((SLOT_MIB * 1024 * 1024 * 3 / 4)) ] || fail "The system image ($((IMAGE_SIZE / 1048576)) MiB) is too large for the ${SLOT_MIB} MiB system slots of this disk."
+
+# Version of the image (from its os-release) for the boot menu and RAUC.
+mkdir -p "$T/root"
+mount -t squashfs -o ro,loop "$IMAGE" "$T/root" || fail "The system image can't be read."
+# shellcheck disable=SC1091
+VERSION_ID=$(. "$T/root/etc/os-release" && echo "${VERSION_ID:-}")
+COMPATIBLE=$(sed -n 's/^compatible=//p' "$T/root/usr/lib/customos/rauc-system.conf" 2>/dev/null)
+[ -x "$T/root/usr/lib/customos/customos-preinit" ] || fail "This system image does not support A/B installation."
+umount "$T/root"
+
+case "$DISK" in
+    *[0-9]) PART="${DISK}p" ;;
+    *) PART="$DISK" ;;
+esac
+P_ESP="${PART}2"; P_A="${PART}3"; P_B="${PART}4"; P_DATA="${PART}5"
+
+# ---- partition ----------------------------------------------------------------------
+progress 2 "Erasing $DISK"
+wipefs -a "$DISK" >/dev/null 2>&1
+sgdisk --zap-all "$DISK" >/dev/null 2>&1 || true
+progress 4 "Creating partitions"
+sgdisk -n1:0:+1M -t1:ef02 -c1:bios-boot \
+       -n2:0:+512M -t2:ef00 -c2:customos-esp \
+       -n3:0:+${SLOT_MIB}M -t3:8300 -c3:customos-rootfs-a \
+       -n4:0:+${SLOT_MIB}M -t4:8300 -c4:customos-rootfs-b \
+       -n5:0:0 -t5:8300 -c5:customos-data "$DISK" >/dev/null \
+    || fail "Could not create the partition table on $DISK."
+partprobe "$DISK" 2>/dev/null || blockdev --rereadpt "$DISK" 2>/dev/null || true
+udevadm settle 2>/dev/null || sleep 2
+for _ in $(seq 1 20); do [ -b "$P_DATA" ] && break; sleep 0.5; done
+[ -b "$P_ESP" ] && [ -b "$P_A" ] && [ -b "$P_B" ] && [ -b "$P_DATA" ] || fail "The new partitions did not appear."
+
+# ---- slot A --------------------------------------------------------------------------
+progress 6 "Copying the system"
+dd if="$IMAGE" of="$P_A" bs=4M conv=fsync status=progress 2>&1 >/dev/null | tr '\r' '\n' | while read -r line; do
+    bytes=$(echo "$line" | sed -n 's/^\([0-9]\{1,\}\) bytes.*/\1/p')
+    [ -n "$bytes" ] && progress $((6 + bytes * 64 / IMAGE_SIZE)) "Copying the system ($((bytes * 100 / IMAGE_SIZE))%)"
+done
+progress 72 "Verifying the copy"
+cmp -n "$IMAGE_SIZE" "$IMAGE" "$P_A" >/dev/null 2>&1 || fail "The system was not written correctly to $DISK (read-back mismatch). The disk may be failing."
+# Slot B stays empty (and unbootable) until the first update.
+dd if=/dev/zero of="$P_B" bs=1M count=8 conv=fsync status=none 2>/dev/null
+
+# ---- file systems ----------------------------------------------------------------------
+progress 76 "Formatting"
+mkfs.vfat -F 32 -n CUSTOMOS "$P_ESP" >/dev/null || fail "Could not format the EFI partition."
+mkfs.ext4 -q -F -L "$OTA_DATA_LABEL" "$P_DATA" || fail "Could not format the data partition."
+
+# ---- prepare the data partition through the runtime view of the new system ------------
+progress 80 "Configuring the system"
+mkdir -p "$T/root" "$T/esp"
+mount -t squashfs -o ro "$P_A" "$T/root" || fail "The installed system can't be mounted."
+mount -t ext4 "$P_DATA" "$T/root/data" || fail "The data partition can't be mounted."
+ota_prepare_data "$T/root/data"
+LOWER=$(mktemp -d)
+for f in passwd group shadow gshadow; do
+    [ -f "$T/root/etc/$f" ] && cp -p "$T/root/etc/$f" "$LOWER/$f"
+done
+ota_mount_tree "$T/root" "$T/root/data" || fail "Could not prepare the persistent overlays."
+mount --bind /proc "$T/root/proc"
+mount --bind /sys "$T/root/sys"
+mount --bind /dev "$T/root/dev"
+mount -t tmpfs tmpfs "$T/root/run"
+mount -t tmpfs tmpfs "$T/root/tmp"
+
+ota_installed_mode "$T/root/etc"
+ACC=$(mktemp -d)
+ota_merge_accounts "$LOWER" "$LOWER/none" "$ACC" && ota_install_accounts "$ACC" "$T/root/etc" \
+    || fail "Could not prepare the account database."
+rm -rf "$ACC" "$LOWER"
+
+echo "$HOSTNAME_NEW" > "$T/root/etc/hostname"
+cat > "$T/root/etc/hosts" <<EOF
+127.0.0.1   localhost
+127.0.1.1   $HOSTNAME_NEW
+::1         localhost
+EOF
+# A machine id now means the first boot is not a "first boot" that would
+# wait for systemd-firstboot questions on the console.
+tr -d '-' < /proc/sys/kernel/random/uuid > "$T/root/etc/machine-id"
+[ -f "$T/root/etc/locale.conf" ] || echo "LANG=en_US.UTF-8" > "$T/root/etc/locale.conf"
+if [ -L /etc/localtime ]; then
+    ln -sfn "$(readlink /etc/localtime)" "$T/root/etc/localtime"
+fi
+# The current boot's network connections (e.g. Wi-Fi chosen in the live session).
+if [ -d /etc/NetworkManager/system-connections ]; then
+    mkdir -p "$T/root/etc/NetworkManager/system-connections"
+    cp -a /etc/NetworkManager/system-connections/. "$T/root/etc/NetworkManager/system-connections/" 2>/dev/null || true
+fi
+
+progress 86 "Creating your account"
+chroot "$T/root" useradd -m -U -G wheel,audio,video,input,render -s /bin/bash -c "$FULLNAME" "$USERNAME" \
+    || fail "Could not create the user account."
+printf '%s:%s\n' "$USERNAME" "$PASSWORD" | chroot "$T/root" chpasswd || fail "Could not set the password."
+chroot "$T/root" passwd -l root >/dev/null 2>&1 || true
+
+# RAUC's record of slot A, so updates and rollbacks can name its version.
+cat > "$T/root/data/rauc/central.raucs" <<EOF
+[slot.rootfs.0]
+bundle.compatible=$COMPATIBLE
+bundle.version=$VERSION_ID
+bundle.description=Installed from the CustomOS installation medium
+status=ok
+sha256=$IMAGE_SHA
+size=$IMAGE_SIZE
+installed.timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+installed.count=1
+EOF
+chmod 0600 "$T/root/data/rauc/central.raucs"
+# The image's version, so the first boot is not treated as a version change.
+. "$T/root/etc/os-release"
+echo "${VERSION_ID:-unknown}${BUILD_ID:++$BUILD_ID}" > "$T/root/data/customos/boot-version"
+
+# ---- boot loader ---------------------------------------------------------------------
+progress 92 "Installing the boot loader"
+mount "$P_ESP" "$T/esp" || fail "The EFI partition can't be mounted."
+efi_ok=0; bios_ok=0
+grub-install --target=x86_64-efi --efi-directory="$T/esp" --boot-directory="$T/esp" \
+    --removable --no-nvram >/tmp/customos-install-grub.log 2>&1 && efi_ok=1
+grub-install --target=i386-pc --boot-directory="$T/esp" "$DISK" \
+    >>/tmp/customos-install-grub.log 2>&1 && bios_ok=1
+if [ -d /sys/firmware/efi ]; then FIRMWARE=uefi; else FIRMWARE=bios; fi
+if [ "$FIRMWARE" = uefi ] && [ $efi_ok -ne 1 ]; then
+    fail "Could not install the UEFI boot loader: $(tail -n 2 /tmp/customos-install-grub.log | tr '\n' ' ')"
+fi
+if [ "$FIRMWARE" = bios ] && [ $bios_ok -ne 1 ]; then
+    fail "Could not install the BIOS boot loader: $(tail -n 2 /tmp/customos-install-grub.log | tr '\n' ' ')"
+fi
+[ $efi_ok -eq 1 ] || warn "UEFI boot loader not installed; the disk boots in BIOS mode only."
+[ $bios_ok -eq 1 ] || warn "BIOS boot loader not installed; the disk boots in UEFI mode only."
+cp "$T/root/usr/lib/customos/grub-ab.cfg" "$T/esp/grub/grub.cfg" || fail "Could not write the boot menu."
+grub-editenv "$T/esp/grub/grubenv" create
+grub-editenv "$T/esp/grub/grubenv" set ORDER="A B" A_OK=1 A_TRY=0 B_OK=0 B_TRY=0 "A_VERSION=$VERSION_ID" B_VERSION= \
+    || fail "Could not write the boot environment."
+
+progress 98 "Finishing"
+sync
+progress 100 "Installation complete"
+echo "DONE"

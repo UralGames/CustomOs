@@ -1,0 +1,13 @@
+# System-wide defaults for the Meridian session. Per-user values (keyboard
+# layout etc.) are written by the shell to ~/.config/labwc/environment.
+XKB_DEFAULT_LAYOUT=us
+XCURSOR_THEME=Adwaita
+XCURSOR_SIZE=24
+XDG_CURRENT_DESKTOP=Meridian:wlroots
+XDG_SESSION_DESKTOP=meridian
+QT_QPA_PLATFORM=wayland
+GDK_BACKEND=wayland,x11
+SDL_VIDEODRIVER=wayland
+MOZ_ENABLE_WAYLAND=1
+ELECTRON_OZONE_PLATFORM_HINT=auto
+_JAVA_AWT_WM_NONREPARENTING=1

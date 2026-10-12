@@ -1,0 +1,10 @@
+menu "CustomOS packages"
+source "$BR2_EXTERNAL_CUSTOMOS_PATH/package/extra-cmake-modules/Config.in"
+source "$BR2_EXTERNAL_CUSTOMOS_PATH/package/layer-shell-qt/Config.in"
+source "$BR2_EXTERNAL_CUSTOMOS_PATH/package/libsfdo/Config.in"
+source "$BR2_EXTERNAL_CUSTOMOS_PATH/package/labwc/Config.in"
+source "$BR2_EXTERNAL_CUSTOMOS_PATH/package/swaylock/Config.in"
+source "$BR2_EXTERNAL_CUSTOMOS_PATH/package/grim/Config.in"
+source "$BR2_EXTERNAL_CUSTOMOS_PATH/package/meridian-desktop/Config.in"
+source "$BR2_EXTERNAL_CUSTOMOS_PATH/package/customos-updater/Config.in"
+endmenu

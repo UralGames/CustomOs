@@ -1,0 +1,23 @@
+# Started by labwc once the compositor is ready (Meridian desktop session).
+
+# Let D-Bus/systemd activated services (portals, notifications) reach this display.
+dbus-update-activation-environment --systemd WAYLAND_DISPLAY DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_TYPE >/dev/null 2>&1 \
+  || systemctl --user import-environment WAYLAND_DISPLAY DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_TYPE >/dev/null 2>&1
+
+# The desktop shell (wallpaper, taskbar, start menu, panels, notifications).
+# Restart it automatically if it ever exits unexpectedly.
+(
+  while true; do
+    meridian-shell
+    status=$?
+    [ "$status" -eq 0 ] && break
+    sleep 1
+  done
+) &
+
+# Update notifications: announces new CustomOS versions, a pending restart or
+# an update that was rolled back (Meridian Update, talks to customos-updated).
+# Only the OTA edition has the update service (customos-update is its CLI).
+if command -v meridian-update >/dev/null 2>&1 && command -v customos-update >/dev/null 2>&1; then
+  meridian-update --notify &
+fi

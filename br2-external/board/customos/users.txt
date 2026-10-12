@@ -1,0 +1,2 @@
+# Live session user (password "live"). The installer removes it from installed systems.
+live -1 live -1 =live /home/live /bin/bash wheel,audio,video,input,render,netdev Live User

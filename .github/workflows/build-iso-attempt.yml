@@ -1,0 +1,220 @@
+# One build job of build-iso.yml (not run on its own).
+#
+# Builds customos_x86_64_defconfig with ./build.sh for at most `build_minutes`.
+# The download and compiler caches are saved whatever happens, so the next job
+# (or the next run) continues where this one stopped. Outputs `result`:
+#   done     the ISO was built and uploaded as an artifact
+#   timeout  out of time; the next job continues
+#   failed   a real build error (log uploaded as an artifact)
+name: Build ISO (one job)
+
+on:
+  workflow_call:
+    inputs:
+      attempt:
+        type: number
+        required: true
+      last:
+        description: No further job follows this one
+        type: boolean
+        required: true
+      retention_days:
+        type: number
+        default: 7
+      build_minutes:
+        description: Time for the build itself; the rest of the 6-hour job limit is set-up and saving the caches
+        type: number
+        default: 315
+    outputs:
+      result:
+        value: ${{ jobs.build.outputs.result }}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ${{ vars.CUSTOMOS_BUILD_RUNNER || 'ubuntu-24.04' }}
+    timeout-minutes: 355
+    outputs:
+      result: ${{ steps.build.outputs.result }}
+    env:
+      BR2_DL_DIR: ${{ github.workspace }}/dl
+      BR2_CCACHE_DIR: ${{ github.workspace }}/ccache
+      # ccache's own limit; with the downloads this stays under GitHub's
+      # 10 GB of caches per repository.
+      CCACHE_MAXSIZE: 5G
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare the runner (disk, swap, host packages)
+        run: |
+          # Buildroot's output needs ~35 GB. Hosted runners have a large
+          # second disk at /mnt; otherwise make room on /.
+          avail_gb() { df -BG --output=avail "$1" 2>/dev/null | tail -n1 | tr -dc 0-9; }
+          mnt_gb=$(avail_gb /mnt)
+          if [ "$RUNNER_ENVIRONMENT" = github-hosted ] && [ "${mnt_gb:-0}" -ge 45 ]; then
+            work=/mnt/customos
+            sudo mkdir -p "$work" && sudo chown "$(id -u):$(id -g)" "$work"
+          else
+            if [ "$RUNNER_ENVIRONMENT" = github-hosted ]; then
+              sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup \
+                /opt/hostedtoolcache/CodeQL /usr/local/share/boost /usr/share/swift
+              sudo docker image prune --all --force >/dev/null 2>&1 || true
+            fi
+            work=$RUNNER_TEMP/customos
+            mkdir -p "$work"
+          fi
+          echo "OUT=$work/output" >> "$GITHUB_ENV"
+          echo "CUSTOMOS_WORK=$work" >> "$GITHUB_ENV"
+          # Linking LLVM and Qt needs more memory than a 2-core runner has.
+          mem_gb=$(( $(awk '/MemTotal/ {print $2}' /proc/meminfo) / 1048576 ))
+          if [ "$RUNNER_ENVIRONMENT" = github-hosted ] && [ "$mem_gb" -lt 15 ]; then
+            if ! { sudo fallocate -l 8G "$work/swapfile" && sudo chmod 600 "$work/swapfile" \
+                   && sudo mkswap "$work/swapfile" >/dev/null && sudo swapon "$work/swapfile"; }; then
+              echo "::warning::Could not add swap space"
+            fi
+          fi
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends build-essential bc cpio file git libncurses-dev \
+            perl python3 rsync unzip wget xz-utils bzip2 zstd
+          mkdir -p "$BR2_DL_DIR" "$BR2_CCACHE_DIR"
+          echo "CPUs: $(nproc), memory: ${mem_gb} GB, build directory: $work"
+          df -h / "$work" | sed 's/^/  /'
+          free -g | sed 's/^/  /'
+
+      - name: Restore the downloads
+        uses: actions/cache/restore@v4
+        with:
+          path: dl
+          key: buildroot-dl-iso-${{ hashFiles('build.sh', 'br2-external/configs/customos_x86_64_defconfig', 'br2-external/package/**') }}
+          restore-keys: buildroot-dl-iso-
+
+      # Newest first: this run's previous job, then any earlier run.
+      - name: Restore the compiler cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ccache
+          key: buildroot-ccache-iso-${{ github.run_id }}-${{ inputs.attempt }}-${{ github.run_attempt }}
+          restore-keys: |
+            buildroot-ccache-iso-${{ github.run_id }}-
+            buildroot-ccache-iso-
+
+      - name: Build CustomOS-x86_64.iso
+        id: build
+        env:
+          BUILD_MINUTES: ${{ inputs.build_minutes }}
+        run: |
+          export CUSTOMOS_BUILD_ID="${GITHUB_SHA::12}"
+          log="$CUSTOMOS_WORK/build.log"
+          echo "Building for at most $BUILD_MINUTES minutes; the full log is kept as an artifact if the build stops."
+          # The full Buildroot log is very large; the job log shows each package step.
+          set +e
+          timeout --kill-after=5m "${BUILD_MINUTES}m" ./build.sh > "$log" 2>&1 &
+          pid=$!
+          tail -n +1 -F --pid="$pid" "$log" 2>/dev/null | grep --line-buffered -a -E '>>> |^Done:|^build\.sh:|Error [0-9]+$' &
+          wait "$pid"
+          rc=$?
+          wait          # the log follower ends with the build
+          set -e
+          if [ "$rc" -eq 0 ] && [ -s CustomOS-x86_64.iso ]; then
+            result="done"
+          elif [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then
+            result="timeout"
+          else
+            result="failed"
+            echo "::group::Last 150 lines of the build log"
+            tail -n 150 "$log"
+            echo "::endgroup::"
+          fi
+          echo "build.sh exit code $rc: $result"
+          echo "result=$result" >> "$GITHUB_OUTPUT"
+
+      - name: Compiler cache statistics
+        if: always()
+        run: |
+          ccache=$OUT/host/bin/ccache
+          if [ -x "$ccache" ]; then BR_CACHE_DIR=$BR2_CCACHE_DIR "$ccache" --show-stats || true; fi
+          du -sh ccache dl 2>/dev/null || true
+
+      - name: Save the compiler cache
+        if: always() && steps.build.outputs.result != ''
+        uses: actions/cache/save@v4
+        with:
+          path: ccache
+          key: buildroot-ccache-iso-${{ github.run_id }}-${{ inputs.attempt }}-${{ github.run_attempt }}
+
+      - name: Keep the ISO
+        if: steps.build.outputs.result == 'done'
+        uses: actions/upload-artifact@v4
+        with:
+          name: CustomOS-x86_64-iso-${{ github.sha }}
+          path: |
+            CustomOS-x86_64.iso
+            CustomOS-x86_64.iso.sha256
+          # The ISO is compressed already.
+          compression-level: 0
+          retention-days: ${{ inputs.retention_days }}
+          if-no-files-found: error
+
+      - name: Keep the build log
+        if: always() && steps.build.outputs.result != 'done' && steps.build.outputs.result != ''
+        run: xz -T0 -3 -k "$CUSTOMOS_WORK/build.log" && mv "$CUSTOMOS_WORK/build.log.xz" "build-log-job${{ inputs.attempt }}.log.xz"
+
+      - name: Upload the build log
+        if: always() && steps.build.outputs.result != 'done' && steps.build.outputs.result != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log-job${{ inputs.attempt }}
+          path: build-log-job${{ inputs.attempt }}.log.xz
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Summary
+        if: always()
+        env:
+          RESULT: ${{ steps.build.outputs.result }}
+          ATTEMPT: ${{ inputs.attempt }}
+          LAST: ${{ inputs.last }}
+        run: |
+          {
+            echo "### Build job $ATTEMPT: ${RESULT:-not run}"
+            echo
+            case "$RESULT" in
+              done)
+                echo "**CustomOS-x86_64.iso** ($(du -h CustomOS-x86_64.iso | cut -f1)) is attached to this run as the"
+                echo "artifact *CustomOS-x86_64-iso-$GITHUB_SHA* (a .zip)."
+                echo
+                echo '```'
+                cat CustomOS-x86_64.iso.sha256
+                echo '```'
+                echo
+                echo "Boot it in VirtualBox: [docs/VM-SETUP.md]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/$GITHUB_SHA/docs/VM-SETUP.md) (4 GB RAM, VMSVGA graphics)." ;;
+              timeout)
+                if [ "$LAST" = true ]; then
+                  echo "Out of time in the last job. Run the workflow again: it continues from the saved compiler cache."
+                else
+                  echo "Out of time; the next job continues from the saved compiler cache."
+                fi ;;
+              failed)
+                echo "The build stopped with an error. The last lines are in this job's log under"
+                echo "*Build CustomOS-x86_64.iso*; the full log is the artifact *build-log-job$ATTEMPT*." ;;
+            esac
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Result
+        if: always()
+        env:
+          RESULT: ${{ steps.build.outputs.result }}
+          LAST: ${{ inputs.last }}
+        run: |
+          case "$RESULT" in
+            done) ;;
+            timeout)
+              if [ "$LAST" = true ]; then
+                echo "::error::Out of time after three jobs; run the workflow again to continue from the caches."
+                exit 1
+              fi
+              echo "::notice::Out of time; the next job continues the build." ;;
+            *) echo "::error::The build failed (see the step 'Build CustomOS-x86_64.iso')."; exit 1 ;;
+          esac

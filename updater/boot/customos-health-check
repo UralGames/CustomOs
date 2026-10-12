@@ -1,0 +1,159 @@
+#!/bin/bash
+# customos-health-check: confirm (or reject) the slot this A/B system booted from.
+#
+# GRUB counts every boot of a slot in grubenv (X_TRY). This check runs once per
+# boot and confirms the slot with "rauc status mark-good booted", which resets
+# the counter. A slot that is never confirmed is given up after three boots and
+# GRUB starts the other slot.
+#
+#  * Trial boot (first boots of a newly installed version, marked by RAUC's
+#    post-install hook in /data/customos/update/pending-slot): the units listed
+#    in /etc/customos/health.conf must come up and stay up. If they do not,
+#    the slot is marked bad and the computer restarts into the previous version.
+#  * Any other boot: confirmed as soon as the system is up. A problem that
+#    appears later in a version that already ran fine is not solved by going
+#    back, and must not silently downgrade the system.
+#
+# The verdict is written to /data/customos/update/last-boot.env for the update
+# service (customos-updated), which records it in the update history. A trial
+# verdict also goes to last-trial.env: after a failed trial, the next (normal)
+# boot of the previous slot replaces last-boot.env, but the service still
+# needs to say why the new version was rejected.
+
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+BOOT_ENV=/run/customos/boot.env
+STATE=/data/customos/update
+GRUBENV=/efi/grub/grubenv
+[ -f "$BOOT_ENV" ] || exit 0          # live image or 0.1 installation: nothing to do
+# shellcheck source=/dev/null
+. "$BOOT_ENV"
+[ -n "$SLOT" ] || exit 0
+
+REQUIRED_UNITS="dbus.service rauc.service"
+TRIAL_TIMEOUT=240
+SETTLE=20
+# shellcheck source=health.conf
+[ -f /etc/customos/health.conf ] && . /etc/customos/health.conf
+
+log() { echo "customos-health-check: $*"; }
+# Also in the kernel log, which reaches the console unless the system was
+# started with "quiet", so the reason for an automatic restart is visible.
+log_console() {
+    log "$*"
+    [ -w /dev/kmsg ] && echo "<3>customos-health-check: $*" > /dev/kmsg 2>/dev/null
+    return 0
+}
+
+report() {   # report good|bad REASON
+    mkdir -p "$STATE"
+    {
+        echo "SLOT=$SLOT"
+        echo "VERSION=$VERSION"
+        echo "RESULT=$1"
+        echo "REASON=\"$(printf '%s' "$2" | tr -d '"\n')\""
+        echo "TIME=$(date +%s)"
+    } > "$STATE/last-boot.env.new" || return 1
+    if [ "$trial" -eq 1 ]; then
+        cp -f "$STATE/last-boot.env.new" "$STATE/last-trial.env.new" \
+            && mv -f "$STATE/last-trial.env.new" "$STATE/last-trial.env"
+    fi
+    mv -f "$STATE/last-boot.env.new" "$STATE/last-boot.env"
+    sync
+}
+
+mark() {   # mark good|bad
+    if rauc status mark-"$1" booted >/dev/null 2>&1; then
+        return 0
+    fi
+    # RAUC is not reachable: write the same GRUB variables directly.
+    log "rauc unavailable, updating $GRUBENV directly"
+    if [ "$1" = good ]; then
+        grub-editenv "$GRUBENV" set "${SLOT}_OK=1" "${SLOT}_TRY=0"
+    else
+        grub-editenv "$GRUBENV" set "${SLOT}_OK=0" "${SLOT}_TRY=0"
+    fi
+}
+
+unit_ok() {   # active and not restarting
+    [ "$(systemctl show -p ActiveState --value "$1" 2>/dev/null)" = active ]
+}
+
+wait_units() {   # wait_units TIMEOUT UNITS... -> prints the units that never became active
+    local deadline=$(( $(date +%s) + $1 )) u missing
+    shift
+    while :; do
+        missing=""
+        for u in "$@"; do
+            unit_ok "$u" || missing="$missing $u"
+        done
+        [ -z "$missing" ] && return 0
+        if [ "$(date +%s)" -ge "$deadline" ]; then
+            echo "${missing# }"
+            return 1
+        fi
+        sleep 2
+    done
+}
+
+trial=0
+pending=$(cat "$STATE/pending-slot" 2>/dev/null || true)
+[ "$pending" = "$SLOT" ] && trial=1
+
+if [ "$trial" -eq 0 ]; then
+    # Confirm promptly so quick restarts never use up the slot's tries.
+    wait_units 60 dbus.service rauc.service >/dev/null || log "dbus/rauc slow to start"
+    mark good
+    if [ -f /run/customos/degraded ]; then
+        report good "started with problems: $(tr '\n' ' ' < /run/customos/degraded)"
+    else
+        report good "normal start"
+    fi
+    log "slot $SLOT ($VERSION) confirmed"
+    exit 0
+fi
+
+log "trial boot of slot $SLOT ($VERSION): checking $REQUIRED_UNITS"
+reason=""
+if [ -f /run/customos/degraded ]; then
+    reason="the system started in degraded mode: $(tr '\n' ' ' < /run/customos/degraded)"
+fi
+if [ -z "$reason" ]; then
+    # shellcheck disable=SC2086
+    if ! missing=$(wait_units "$TRIAL_TIMEOUT" $REQUIRED_UNITS); then
+        reason="did not start: $missing"
+    fi
+fi
+if [ -z "$reason" ]; then
+    # The units must also stay up (a crash loop would pass a single look).
+    declare -A restarts=()
+    for u in $REQUIRED_UNITS; do
+        restarts[$u]=$(systemctl show -p NRestarts --value "$u" 2>/dev/null || echo 0)
+    done
+    sleep "$SETTLE"
+    for u in $REQUIRED_UNITS; do
+        now=$(systemctl show -p NRestarts --value "$u" 2>/dev/null || echo 0)
+        if ! unit_ok "$u" || [ "$now" != "${restarts[$u]}" ]; then
+            reason="$reason $u stopped or restarted;"
+        fi
+    done
+    reason=${reason# }
+fi
+if [ -z "$reason" ] && ! rauc status >/dev/null 2>&1; then
+    reason="the update service (RAUC) does not answer, so this version could not receive further updates"
+fi
+
+if [ -z "$reason" ]; then
+    mark good
+    rm -f "$STATE/pending-slot"
+    report good "trial boot passed"
+    log "slot $SLOT ($VERSION) passed its trial boot and is confirmed"
+    exit 0
+fi
+
+log_console "slot $SLOT ($VERSION) FAILED its trial boot: $reason"
+report bad "$reason"
+rm -f "$STATE/pending-slot"
+mark bad
+log_console "restarting into the previous version"
+systemctl reboot
+exit 1

@@ -1,0 +1,37 @@
+#!/bin/bash
+# customos-ota-setup: early boot tasks of an installed A/B system that need
+# systemd's mounts (run by customos-ota-setup.service, before RAUC starts).
+#  * checks that the EFI system partition and the GRUB environment are there;
+#  * records the version of the booted slot in grubenv for the boot menu.
+
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+BOOT_ENV=/run/customos/boot.env
+GRUBENV=/efi/grub/grubenv
+[ -f "$BOOT_ENV" ] || exit 0
+# shellcheck source=/dev/null
+. "$BOOT_ENV"
+[ -n "$SLOT" ] || exit 0
+
+if ! mountpoint -q /efi; then
+    mount /efi 2>/dev/null || {
+        echo "customos-ota-setup: the EFI system partition is not mounted; updates cannot switch slots" >&2
+        echo "EFI system partition not mounted" >> /run/customos/degraded
+        exit 0
+    }
+fi
+if [ ! -f "$GRUBENV" ]; then
+    echo "customos-ota-setup: $GRUBENV is missing; recreating it for slot $SLOT" >&2
+    grub-editenv "$GRUBENV" create
+    if [ "$SLOT" = A ]; then
+        grub-editenv "$GRUBENV" set ORDER="A B" A_OK=1 A_TRY=0 B_OK=0 B_TRY=0
+    else
+        grub-editenv "$GRUBENV" set ORDER="B A" B_OK=1 B_TRY=0 A_OK=0 A_TRY=0
+    fi
+fi
+
+. /etc/os-release
+current=$(grub-editenv "$GRUBENV" list | sed -n "s/^${SLOT}_VERSION=//p")
+if [ "$current" != "$VERSION_ID" ]; then
+    grub-editenv "$GRUBENV" set "${SLOT}_VERSION=$VERSION_ID"
+fi
+exit 0

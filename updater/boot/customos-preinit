@@ -1,0 +1,170 @@
+#!/bin/bash
+# customos-preinit: first process (PID 1) of an installed CustomOS A/B system.
+#
+# GRUB starts the kernel of the selected slot with
+#   root=PARTUUID=<slot> rootfstype=squashfs ro init=/usr/lib/customos/customos-preinit
+#   rauc.slot=A|B customos.data=PARTUUID=<data partition>
+# The kernel mounts the read-only slot as "/". This script mounts the data
+# partition, overlays the persistent parts (/etc, /var, /root, /home), merges
+# the account database, writes RAUC's configuration for this disk and then
+# hands over to systemd. If anything goes wrong it still starts systemd, with
+# volatile (RAM) overlays, and leaves /run/customos/degraded for the health
+# check, which then refuses to confirm an updated slot.
+#
+# The live ISO does not use this script (it boots from an initramfs).
+
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+OTA_LIBDIR=/usr/lib/customos
+# shellcheck source=ota-lib.sh
+. "$OTA_LIBDIR/ota-lib.sh"
+
+INIT=/usr/lib/systemd/systemd
+[ -x "$INIT" ] || INIT=/sbin/init
+
+degraded() {
+    ota_log "DEGRADED: $*"
+    mkdir -p /run/customos
+    echo "$*" >> /run/customos/degraded
+}
+
+handover() {
+    # Never return: PID 1 must not exit.
+    exec "$INIT" "$@"
+    exec /sbin/init "$@"
+    echo "customos-preinit: cannot start $INIT" >&2
+    while true; do sleep 3600; done
+}
+
+mountpoint -q /proc || mount -t proc proc /proc
+mountpoint -q /sys || mount -t sysfs sysfs /sys
+mountpoint -q /dev || mount -t devtmpfs devtmpfs /dev
+mountpoint -q /run || mount -t tmpfs -o mode=0755,nosuid,nodev,size=20% tmpfs /run
+mkdir -p /run/customos
+# devtmpfs lacks the /dev/fd links that shells expect (systemd adds them later).
+[ -e /dev/fd ] || ln -s /proc/self/fd /dev/fd
+[ -e /dev/stdin ] || ln -s /proc/self/fd/0 /dev/stdin
+[ -e /dev/stdout ] || ln -s /proc/self/fd/1 /dev/stdout
+[ -e /dev/stderr ] || ln -s /proc/self/fd/2 /dev/stderr
+
+SLOT=""; DATA_SPEC=""; ROOT_SPEC=""
+for arg in $(cat /proc/cmdline); do
+    case "$arg" in
+        rauc.slot=*) SLOT=${arg#rauc.slot=} ;;
+        customos.data=*) DATA_SPEC=${arg#customos.data=} ;;
+        root=*) ROOT_SPEC=${arg#root=} ;;
+    esac
+done
+
+# ---- find the devices ----------------------------------------------------------------
+ROOT_DEV=""
+case "$ROOT_SPEC" in
+    PARTUUID=*) ROOT_DEV=$(ota_find_partuuid "${ROOT_SPEC#PARTUUID=}") ;;
+    /dev/*) ROOT_DEV=$ROOT_SPEC ;;
+esac
+DISK=""
+[ -n "$ROOT_DEV" ] && DISK=$(ota_parent_disk "$ROOT_DEV")
+DATA_DEV=""
+case "$DATA_SPEC" in
+    PARTUUID=*) DATA_DEV=$(ota_find_partuuid "${DATA_SPEC#PARTUUID=}") ;;
+    /dev/*) DATA_DEV=$DATA_SPEC ;;
+esac
+[ -z "$DATA_DEV" ] && [ -n "$DISK" ] && DATA_DEV=$(ota_partition_dev "$DISK" "$OTA_PART_DATA")
+ESP_DEV=""; A_DEV=""; B_DEV=""
+if [ -n "$DISK" ]; then
+    ESP_DEV=$(ota_partition_dev "$DISK" "$OTA_PART_ESP")
+    A_DEV=$(ota_partition_dev "$DISK" "$OTA_PART_A")
+    B_DEV=$(ota_partition_dev "$DISK" "$OTA_PART_B")
+fi
+
+# ---- data partition --------------------------------------------------------------------
+data_ok=0
+if [ -n "$DATA_DEV" ] && [ -b "$DATA_DEV" ]; then
+    e2fsck -p "$DATA_DEV" >/run/customos/fsck.log 2>&1
+    rc=$?
+    if [ "$rc" -ge 4 ]; then
+        ota_log "the data partition has errors, repairing"
+        e2fsck -y "$DATA_DEV" >>/run/customos/fsck.log 2>&1
+        rc=$?
+    fi
+    if [ "$rc" -lt 4 ] && mount -t ext4 -o rw,noatime "$DATA_DEV" /data; then
+        data_ok=1
+    else
+        degraded "cannot mount the data partition $DATA_DEV (fsck exit $rc)"
+    fi
+else
+    degraded "data partition not found (customos.data=$DATA_SPEC)"
+fi
+if [ "$data_ok" -ne 1 ]; then
+    # Keep the system usable (and the cause visible) with a RAM-only data area.
+    mount -t tmpfs -o mode=0755,size=25% tmpfs /data
+fi
+ota_prepare_data /data
+
+# ---- /etc after a version change -------------------------------------------------------
+. /etc/os-release
+NEW_VERSION="${VERSION_ID:-unknown}${BUILD_ID:++$BUILD_ID}"
+OLD_VERSION=$(cat /data/customos/boot-version 2>/dev/null || true)
+if [ -n "$OLD_VERSION" ] && [ "$OLD_VERSION" != "$NEW_VERSION" ]; then
+    ota_log "booting $NEW_VERSION (previously $OLD_VERSION)"
+    ota_prune_etc /data/overlay/etc/upper "/data/customos/etc-backup/$OLD_VERSION-$(date +%Y%m%d%H%M%S)"
+    # Keep the three newest backups.
+    ls -1dt /data/customos/etc-backup/*/ 2>/dev/null | tail -n +4 | xargs -r rm -rf
+fi
+
+# Copy what the account merge needs from the image before /etc is overlaid.
+mkdir -p /run/customos/lower-etc
+for f in passwd group shadow gshadow; do
+    [ -f "/etc/$f" ] && cp -p "/etc/$f" "/run/customos/lower-etc/$f"
+done
+
+# ---- runtime mounts -------------------------------------------------------------------
+modprobe overlay 2>/dev/null || true   # built in on CustomOS; a module on other kernels
+if ! ota_mount_tree "" /data; then
+    degraded "cannot set up the persistent overlays"
+fi
+# Mount points that must be creatable on a read-only root.
+mount -t tmpfs -o mode=0755,nosuid,nodev tmpfs /media
+mount -t tmpfs -o mode=0755,nosuid,nodev tmpfs /mnt
+
+# ---- installed-system adjustments (through the overlay) ------------------------------
+ota_installed_mode /etc
+mkdir -p /run/customos/accounts
+if ota_merge_accounts /run/customos/lower-etc /etc /run/customos/accounts; then
+    ota_install_accounts /run/customos/accounts /etc
+else
+    degraded "account merge failed"
+fi
+rm -rf /run/customos/accounts /run/customos/lower-etc
+
+DATA_UUID=$(blkid -s PARTUUID -o value "$DATA_DEV" 2>/dev/null)
+ESP_UUID=$(blkid -s PARTUUID -o value "$ESP_DEV" 2>/dev/null)
+cat > /etc/fstab.customos-new <<EOF
+# Written at every boot by customos-preinit (A/B system); edits are not kept.
+/dev/root            /      squashfs  ro                  0 0
+PARTUUID=$DATA_UUID  /data  ext4      defaults,noatime    0 0
+PARTUUID=$ESP_UUID   /efi   vfat      umask=0077,nofail   0 0
+EOF
+mv -f /etc/fstab.customos-new /etc/fstab
+
+# RAUC's configuration, with the device names of the disk we booted from.
+# /etc/rauc/system.conf in the image is a symbolic link to this file.
+mkdir -p /run/rauc
+if [ -n "$A_DEV" ]; then
+    sed -e "s|@SLOT_A_DEVICE@|$A_DEV|" -e "s|@SLOT_B_DEVICE@|$B_DEV|" \
+        "$OTA_LIBDIR/rauc-system.conf" > /run/rauc/system.conf
+else
+    degraded "cannot determine the system disk; updates are disabled for this boot"
+fi
+
+cat > /run/customos/boot.env <<EOF
+SLOT=$SLOT
+DISK=$DISK
+ROOT_DEVICE=$ROOT_DEV
+DATA_DEVICE=$DATA_DEV
+ESP_DEVICE=$ESP_DEV
+VERSION=$NEW_VERSION
+EOF
+echo "$NEW_VERSION" > /data/customos/boot-version.new && mv -f /data/customos/boot-version.new /data/customos/boot-version
+sync
+
+handover "$@"

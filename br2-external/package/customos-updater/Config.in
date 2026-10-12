@@ -1,0 +1,78 @@
+config BR2_PACKAGE_CUSTOMOS_UPDATER
+	bool "customos-updater"
+	depends on BR2_PACKAGE_QT6
+	depends on BR2_INIT_SYSTEMD
+	depends on BR2_TOOLCHAIN_HAS_THREADS # rauc -> glib2
+	depends on BR2_USE_MMU # rauc -> glib2
+	depends on BR2_USE_WCHAR # rauc -> glib2
+	depends on BR2_TARGET_GRUB2_INSTALL_TOOLS # grub-editenv, grub-install
+	select BR2_PACKAGE_QT6BASE_NETWORK
+	select BR2_PACKAGE_QT6BASE_DBUS
+	# Qt's TLS backend: GitHub is only reachable over HTTPS.
+	select BR2_PACKAGE_OPENSSL
+	select BR2_PACKAGE_CA_CERTIFICATES
+	select BR2_PACKAGE_RAUC
+	select BR2_PACKAGE_RAUC_DBUS
+	select BR2_PACKAGE_RAUC_JSON
+	select BR2_PACKAGE_BASH # boot and installer scripts
+	select BR2_PACKAGE_UTIL_LINUX
+	select BR2_PACKAGE_UTIL_LINUX_BINARIES # blkid, lsblk
+	select BR2_PACKAGE_UTIL_LINUX_MOUNT
+	select BR2_PACKAGE_UTIL_LINUX_MOUNTPOINT
+	select BR2_PACKAGE_E2FSPROGS # e2fsck, mkfs.ext4 for the data partition
+	select BR2_PACKAGE_GPTFDISK # installer
+	select BR2_PACKAGE_GPTFDISK_SGDISK
+	select BR2_PACKAGE_DOSFSTOOLS
+	select BR2_PACKAGE_DOSFSTOOLS_MKFS_FAT
+	select BR2_PACKAGE_SHADOW # useradd in the installer
+	help
+	  Over-the-air updates for CustomOS from GitHub Releases:
+	  the customos-updated service and customos-update command,
+	  the A/B boot integration (preinit, GRUB menu, health check,
+	  RAUC configuration and hooks) and the A/B installer.
+
+	  The Meridian Update user interface is part of
+	  meridian-desktop.
+
+if BR2_PACKAGE_CUSTOMOS_UPDATER
+
+config BR2_PACKAGE_CUSTOMOS_UPDATER_REPOSITORY
+	string "GitHub repository with the releases"
+	default "UralGames/CustomOs"
+	help
+	  "owner/name" (or https://github.com/owner/name) of the
+	  repository whose GitHub Releases carry the update bundles.
+	  Can be changed at run time in /etc/customos/update.conf.d/.
+
+	  GitHub only serves release files of a private repository
+	  with an access token; either publish releases from a public
+	  repository or configure TokenFile on each system.
+
+config BR2_PACKAGE_CUSTOMOS_UPDATER_COMPATIBLE
+	string "RAUC compatible string"
+	default "customos-x86_64-ab"
+	help
+	  Systems only accept bundles built for the same compatible.
+	  Change it only together with the release workflow.
+
+config BR2_PACKAGE_CUSTOMOS_UPDATER_CHANNEL
+	string "release channel"
+	default "stable"
+	help
+	  "stable": the newest GitHub release that is not marked as a
+	  pre-release. ("beta", including pre-releases, is reserved
+	  for later.)
+
+config BR2_PACKAGE_CUSTOMOS_UPDATER_KEYRING
+	string "trusted certificate (RAUC keyring)"
+	default "$(BR2_EXTERNAL_CUSTOMOS_PATH)/../keys/customos-ota-ca.cert.pem"
+	help
+	  PEM file with the CA certificate that update bundles must be
+	  signed with (created by release/keys/create-ota-keys.sh).
+	  It is installed as /etc/rauc/keyring.pem. Only the public
+	  certificate goes into the image; the private keys never do.
+
+endif
+
+comment "customos-updater needs Qt 6, systemd and GRUB with tools installed on the target"
+	depends on !BR2_PACKAGE_QT6 || !BR2_INIT_SYSTEMD || !BR2_TARGET_GRUB2_INSTALL_TOOLS

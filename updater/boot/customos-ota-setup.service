@@ -1,0 +1,16 @@
+[Unit]
+Description=Prepare the CustomOS A/B boot environment
+ConditionPathExists=/run/customos/boot.env
+DefaultDependencies=no
+After=local-fs.target efi.mount
+Wants=efi.mount
+Before=rauc.service customos-updated.service customos-health-check.service sysinit.target
+RequiresMountsFor=/data
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/customos/customos-ota-setup
+RemainAfterExit=yes
+
+[Install]
+WantedBy=sysinit.target

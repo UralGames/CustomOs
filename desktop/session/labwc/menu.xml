@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Window menu (right-click a title bar, or Alt+Space) for the Meridian desktop. -->
+<openbox_menu>
+
+  <menu id="client-menu">
+    <item label="Minimise">
+      <action name="Iconify" />
+    </item>
+    <item label="Maximise / Restore">
+      <action name="ToggleMaximize" />
+    </item>
+    <item label="Snap left">
+      <action name="SnapToEdge" direction="left" />
+    </item>
+    <item label="Snap right">
+      <action name="SnapToEdge" direction="right" />
+    </item>
+    <separator />
+    <item label="Always on top">
+      <action name="ToggleAlwaysOnTop" />
+    </item>
+    <item label="Show on all desktops">
+      <action name="ToggleOmnipresent" />
+    </item>
+    <item label="Move to the desktop on the left">
+      <action name="SendToDesktop" to="left" follow="no" wrap="yes" />
+    </item>
+    <item label="Move to the desktop on the right">
+      <action name="SendToDesktop" to="right" follow="no" wrap="yes" />
+    </item>
+    <separator />
+    <item label="Move">
+      <action name="Move" />
+    </item>
+    <item label="Resize">
+      <action name="Resize" />
+    </item>
+    <separator />
+    <item label="Close">
+      <action name="Close" />
+    </item>
+  </menu>
+
+  <!-- Only reachable if the shell is not running (it normally owns the desktop). -->
+  <menu id="root-menu">
+    <item label="Terminal">
+      <action name="Execute" command="meridian-terminal" />
+    </item>
+    <item label="Restart the desktop shell">
+      <action name="Execute" command="sh -c 'pkill -x meridian-shell; meridian-shell &amp;'" />
+    </item>
+    <separator />
+    <item label="Sign out">
+      <action name="Exit" />
+    </item>
+  </menu>
+
+</openbox_menu>

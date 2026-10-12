@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Files
+GenericName=File Manager
+Comment=Browse and manage your files and folders
+Exec=meridian-files %U
+Icon=meridian-files
+Terminal=false
+Categories=System;FileTools;FileManager;Utility;Core;
+MimeType=inode/directory;
+Keywords=folder;explorer;browse;directory;
+StartupWMClass=meridian-files

@@ -1,0 +1,28 @@
+# swaylock look for the Meridian desktop (system default).
+# The shell passes the current wallpaper with -i.
+color=101615
+font=Inter
+indicator-radius=72
+indicator-thickness=8
+indicator-idle-visible
+show-failed-attempts
+ignore-empty-password
+inside-color=10161599
+inside-clear-color=10161599
+inside-ver-color=1F8A7AAA
+inside-wrong-color=8A2E28AA
+ring-color=5BC7B4CC
+ring-clear-color=E5C07BCC
+ring-ver-color=5BC7B4
+ring-wrong-color=F28B86
+key-hl-color=E9F7F4
+bs-hl-color=F28B86
+line-color=00000000
+line-clear-color=00000000
+line-ver-color=00000000
+line-wrong-color=00000000
+separator-color=00000000
+text-color=F2F5F4
+text-clear-color=F2F5F4
+text-ver-color=F2F5F4
+text-wrong-color=FFD6D3
