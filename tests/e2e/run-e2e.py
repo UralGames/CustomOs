@@ -327,17 +327,21 @@ def stage_untrusted(env):
 
 
 def stage_downgrade(env):
+    # The mock's "latest" stays 0.6.0; 0.2.0 only has to be downloadable.
+    env.publish("0.2.0")
     vm = env.installed_vm("downgrade")
     try:
         boot_until_slot(vm, "B")
         wait_health(vm)
+        before = grubenv(vm)
         # Give the old, validly signed 0.2.0 bundle straight to RAUC, bypassing the update service.
         rc, out = vm.run("rauc install http://10.0.2.2:8077/storage/v0.2.0/CustomOS-v0.2.0.raucb", timeout=600, check=False)
         print(out[-800:])
-        check(rc != 0 and ("downgrade" in out or "not supported" in out.lower()),
-              "RAUC refused the older bundle (pre-install hook) or cannot fetch over HTTP")
-        if "downgrade" not in out:
-            print("    note: this RAUC build cannot install from a URL; the hook is covered by the update service path")
+        journal = vm.out("journalctl -b -u rauc --no-pager | grep 'customos:' || true")
+        print(journal[-800:])
+        check(rc != 0, "RAUC did not install the older 0.2.0 bundle")
+        check("refusing to downgrade from 0.3.0 to 0.2.0" in out + journal, "refused by the pre-install hook (downgrade)")
+        check(grubenv(vm) == before, "boot configuration unchanged")
         vm.child.sendline("poweroff")
         vm.wait_exit(timeout=300)
     finally:

@@ -98,33 +98,47 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_file(os.path.join(cfg.root, m[1], m[2]))
         self.send_json({"message": "Not Found"}, 404)
 
+    def do_HEAD(self):
+        self.do_GET()
+
     def send_file(self, path):
         if not os.path.isfile(path):
             return self.send_json({"message": "Not Found"}, 404)
         size = os.path.getsize(path)
-        start = 0
-        rng = self.headers.get("Range", "")
-        m = re.match(r"^bytes=(\d+)-$", rng)
-        if m:
-            start = int(m[1])
-            if start >= size:
+        start, end = 0, size - 1
+        # Single ranges as GitHub's storage serves them: "bytes=N-" (resumed
+        # downloads), "bytes=A-B" (RAUC's bundle streaming) and "bytes=-N".
+        m = re.match(r"^bytes=(\d*)-(\d*)$", self.headers.get("Range", ""))
+        if m and (m[1] or m[2]):
+            if m[1]:
+                start = int(m[1])
+                end = min(int(m[2]), size - 1) if m[2] else size - 1
+            else:
+                start = max(0, size - int(m[2]))
+            if start >= size or start > end:
                 self.send_response(416)
+                self.send_header("Content-Range", f"bytes */{size}")
                 self.send_header("Content-Length", "0")
                 self.end_headers()
                 return
             self.send_response(206)
-            self.send_header("Content-Range", f"bytes {start}-{size - 1}/{size}")
+            self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
         else:
             self.send_response(200)
         self.send_header("Content-Type", "application/octet-stream")
-        self.send_header("Content-Length", str(size - start))
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Content-Length", str(end - start + 1))
         self.end_headers()
+        if self.command == "HEAD":
+            return
         with open(path, "rb") as f:
             f.seek(start)
-            while True:
-                chunk = f.read(1 << 20)
+            left = end - start + 1
+            while left > 0:
+                chunk = f.read(min(left, 1 << 20))
                 if not chunk:
                     break
+                left -= len(chunk)
                 try:
                     self.wfile.write(chunk)
                 except (BrokenPipeError, ConnectionResetError):
