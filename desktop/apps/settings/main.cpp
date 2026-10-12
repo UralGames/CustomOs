@@ -1,6 +1,6 @@
 // meridian-settings: the Meridian settings app.
 //   meridian-settings [PAGE]   PAGE: system display sound network appearance taskbar
-//                                    multitasking input notifications time user
+//                                    multitasking input notifications time user updates
 
 #include "meridian.h"
 
@@ -9,6 +9,7 @@
 #include <QtQml/qqmlextensionplugin.h>
 
 MERIDIAN_IMPORT_QML_MODULES()
+Q_IMPORT_QML_PLUGIN(Meridian_UpdatePlugin)
 
 int main(int argc, char *argv[])
 {

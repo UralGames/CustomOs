@@ -5,17 +5,30 @@ set -eu
 TARGET_DIR="$1"
 
 # ---- Identity -------------------------------------------------------------------
-cat > "$TARGET_DIR/usr/lib/os-release" <<'EOF'
+# The version comes from the VERSION file at the top of the repository (see
+# docs/VERSIONING.md). CUSTOMOS_BUILD_ID (set by the release workflow) or the
+# Git commit identifies the build.
+BOARD_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_DIR="$(cd "$BOARD_DIR/../../.." && pwd)"
+VERSION_ID="$(tr -d ' \n' < "$REPO_DIR/VERSION" 2>/dev/null || true)"
+if ! echo "$VERSION_ID" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+    echo "post-build: $REPO_DIR/VERSION must hold a version like 0.2.0 (found '$VERSION_ID')" >&2
+    exit 1
+fi
+BUILD_ID="${CUSTOMOS_BUILD_ID:-$(git -C "$REPO_DIR" rev-parse --short=12 HEAD 2>/dev/null || echo local)}"
+cat > "$TARGET_DIR/usr/lib/os-release" <<EOF
 NAME="CustomOS"
-PRETTY_NAME="CustomOS 1.0 (Meridian)"
+PRETTY_NAME="CustomOS $VERSION_ID (Meridian)"
 ID=customos
-VERSION="1.0 (Meridian)"
-VERSION_ID=1.0
+VERSION="$VERSION_ID (Meridian)"
+VERSION_ID=$VERSION_ID
 VERSION_CODENAME=meridian
-HOME_URL="https://example.invalid/customos"
+BUILD_ID="$BUILD_ID"
+HOME_URL="https://github.com/UralGames/CustomOs"
 LOGO=customos-logo
 EOF
 ln -sf ../usr/lib/os-release "$TARGET_DIR/etc/os-release"
+printf 'CustomOS %s \\n \\l\n\n' "$VERSION_ID" > "$TARGET_DIR/etc/issue"
 echo "customos" > "$TARGET_DIR/etc/hostname"
 
 # ---- Permissions that the overlay cannot carry ------------------------------

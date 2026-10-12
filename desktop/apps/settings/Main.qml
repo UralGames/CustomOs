@@ -14,7 +14,8 @@ ApplicationWindow {
     minimumWidth: 760
     minimumHeight: 480
     visible: true
-    title: pages.find(p => p.id === page) ? pages.find(p => p.id === page).label : ""
+    title: page === "updates" ? qsTr("Updates")
+           : pages.find(p => p.id === page) ? pages.find(p => p.id === page).label : ""
 
     readonly property var pages: [
         { id: "system", label: qsTr("System"), icon: "info" },
@@ -88,7 +89,8 @@ ApplicationWindow {
                         Layout.fillWidth: true
                         text: modelData.label
                         icon.name: modelData.icon
-                        highlighted: win.page === modelData.id
+                        // Updates is a sub-page of System.
+                        highlighted: win.page === modelData.id || (modelData.id === "system" && win.page === "updates")
                         onClicked: win.page = modelData.id
                     }
                 }
@@ -134,10 +136,14 @@ ApplicationWindow {
                     case "notifications": return "NotificationsPage.qml"
                     case "time": return "TimePage.qml"
                     case "user": return "UserPage.qml"
+                    case "updates": return "UpdatesPage.qml"
                     default: return "SystemPage.qml"
                     }
                 }
-                onLoaded: item.notify = win.notify
+                onLoaded: {
+                    item.notify = win.notify
+                    item.navigate = function(p) { win.page = p }
+                }
             }
         }
     }

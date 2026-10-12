@@ -59,6 +59,10 @@ public:
     // result: "success", "failed", "pending", "rolled-back"
     void addHistory(const QString &event, const QString &result, const QString &fromVersion,
                     const QString &toVersion, const QString &message);
+    // Turns the newest "pending" entry for toVersion into the final outcome
+    // (one history line per update attempt); appends if there is none.
+    void resolveHistory(const QString &event, const QString &result, const QString &fromVersion,
+                        const QString &toVersion, const QString &message);
     QJsonArray history() const { return m_history; }
 
     BootReport lastBootReport() const;

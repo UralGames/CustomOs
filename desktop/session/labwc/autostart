@@ -14,3 +14,9 @@ dbus-update-activation-environment --systemd WAYLAND_DISPLAY DISPLAY XDG_CURRENT
     sleep 1
   done
 ) &
+
+# Update notifications: announces new CustomOS versions, a pending restart or
+# an update that was rolled back (Meridian Update, talks to customos-updated).
+if command -v meridian-update >/dev/null 2>&1; then
+  meridian-update --notify &
+fi

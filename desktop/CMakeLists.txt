@@ -36,6 +36,8 @@ add_compile_definitions(
 
 add_subdirectory(core)
 add_subdirectory(style)
+# Meridian.Update (Settings › System › Updates and the Meridian Update app)
+add_subdirectory(update)
 
 if(MERIDIAN_BUILD_SHELL)
     add_subdirectory(shell)

@@ -104,6 +104,27 @@ void StateStore::addHistory(const QString &event, const QString &result, const Q
         m_history.removeFirst();
 }
 
+void StateStore::resolveHistory(const QString &event, const QString &result, const QString &fromVersion,
+                                const QString &toVersion, const QString &message)
+{
+    for (int i = m_history.size() - 1; i >= 0; --i) {
+        QJsonObject e = m_history.at(i).toObject();
+        if (e.value(QLatin1String("result")).toString() != QLatin1String("pending"))
+            continue;
+        if (e.value(QLatin1String("to_version")).toString() != toVersion)
+            break;
+        e.insert(QStringLiteral("time"), formatTime(QDateTime::currentDateTimeUtc()));
+        e.insert(QStringLiteral("event"), event);
+        e.insert(QStringLiteral("result"), result);
+        if (!fromVersion.isEmpty())
+            e.insert(QStringLiteral("from_version"), fromVersion);
+        e.insert(QStringLiteral("message"), message);
+        m_history.replace(i, e);
+        return;
+    }
+    addHistory(event, result, fromVersion, toVersion, message);
+}
+
 BootReport StateStore::lastBootReport() const
 {
     BootReport r;

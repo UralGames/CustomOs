@@ -1,0 +1,25 @@
+# Kernel options for the A/B update layout, applied on top of linux.fragment
+# by customos_x86_64_ota_defconfig only (customos_x86_64_defconfig is not
+# affected).
+
+# RAUC "verity" bundles: the bundle is mounted through dm-verity, so every
+# block read during installation is authenticated against the signed root hash.
+CONFIG_MD=y
+CONFIG_BLK_DEV_DM=y
+CONFIG_DM_VERITY=y
+CONFIG_BLK_DEV_LOOP=y
+CONFIG_CRYPTO_SHA256=y
+
+# The system slots are read-only squashfs images (xz, which GRUB can read to
+# load the kernel); /etc, /var and /root are overlays on the data partition.
+CONFIG_SQUASHFS=y
+CONFIG_SQUASHFS_XZ=y
+CONFIG_OVERLAY_FS=y
+
+# Hardware watchdogs (Intel TCO, AMD/ATI SB, QEMU's i6300esb): a boot that
+# hangs is reset, and GRUB's boot counter then falls back to the other slot.
+CONFIG_WATCHDOG=y
+CONFIG_WATCHDOG_CORE=y
+CONFIG_ITCO_WDT=y
+CONFIG_SP5100_TCO=y
+CONFIG_I6300ESB_WDT=y

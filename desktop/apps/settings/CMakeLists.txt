@@ -22,8 +22,10 @@ qt_add_qml_module(meridian-settings
         NotificationsPage.qml
         TimePage.qml
         UserPage.qml
+        UpdatesPage.qml
 )
 target_link_libraries(meridian-settings PRIVATE
     meridiancore meridiancoreplugin meridianstyle meridianstyleplugin
+    meridianupdate meridianupdateplugin
     Qt6::Quick Qt6::QuickControls2)
 install(TARGETS meridian-settings RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})

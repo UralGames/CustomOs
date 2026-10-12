@@ -3,6 +3,7 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import Meridian.Core
 import Meridian.Settings
+import Meridian.Update
 
 SettingsPage {
     id: page
@@ -30,6 +31,46 @@ SettingsPage {
                 Label { text: (SystemInfo.osName || "CustomOS") + " " + SystemInfo.osVersion; font.pixelSize: Theme.fontTitle; font.weight: Font.DemiBold }
                 Label { text: qsTr("Meridian desktop %1 • Qt %2").arg(SystemInfo.desktopVersion).arg(SystemInfo.qtVersion); color: Theme.textSecondary }
                 Label { text: Sys.isLive ? qsTr("Running from the live image") : qsTr("Installed on this computer"); color: Theme.textSecondary }
+            }
+        }
+    }
+
+    // Updates (opens the System › Updates sub-page)
+    SectionCard {
+        id: updatesCard
+        Layout.fillWidth: true
+        readonly property var us: Updates.status
+        readonly property string summary: {
+            if (!Updates.serviceAvailable) return qsTr("The update service isn't running")
+            switch (us.state) {
+            case "checking": return qsTr("Checking for updates…")
+            case "update-available": return qsTr("%1 %2 is available").arg(us.osName || "CustomOS").arg(us.availableVersion)
+            case "downloading": return qsTr("Downloading %1 (%2%)").arg(us.availableVersion).arg(Math.max(0, us.progress || 0))
+            case "verifying": return qsTr("Verifying the update")
+            case "installing": return qsTr("Installing %1 (%2%)").arg(us.availableVersion).arg(Math.max(0, us.progress || 0))
+            case "confirming": return qsTr("Finishing the update")
+            case "reboot-required": return qsTr("Restart to finish the update")
+            case "error": return us.errorMessage || qsTr("The last update didn't finish")
+            case "up-to-date": return qsTr("Up to date")
+            default: return us.supported === false ? (us.mode === "live" ? qsTr("Install %1 to a disk to receive updates").arg(us.osName || "CustomOS")
+                                                                          : qsTr("This installation can't be updated automatically"))
+                                                   : qsTr("Check whether a newer version is available")
+            }
+        }
+        readonly property bool attention: Updates.serviceAvailable
+                                          && ["update-available", "reboot-required", "error"].indexOf(us.state) >= 0
+        SettingRow {
+            title: qsTr("Updates")
+            description: updatesCard.summary
+            iconName: "update"
+            Rectangle {
+                visible: updatesCard.attention
+                width: 8; height: 8; radius: 4
+                color: updatesCard.us.state === "error" ? Theme.danger : Theme.accent
+            }
+            Button {
+                text: qsTr("Open")
+                onClicked: page.navigate("updates")
             }
         }
     }

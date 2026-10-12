@@ -121,7 +121,11 @@ void InstallerBackend::install(const QString &disk, const QString &confirmDisk, 
         m_proc->deleteLater();
         m_proc = nullptr;
     });
-    const QString script = QStringLiteral(MERIDIAN_LIBEXECDIR "/customos-install");
+    // Images with over-the-air updates ship the A/B installer (customos-updater);
+    // it lays the disk out with two system slots and a data partition.
+    const QString abScript = QStringLiteral(MERIDIAN_LIBEXECDIR "/customos-install-ab");
+    const QString script = QFileInfo::exists(abScript) ? abScript
+                                                       : QStringLiteral(MERIDIAN_LIBEXECDIR "/customos-install");
     m_proc->start(QStringLiteral("sudo"),
                   {QStringLiteral("-n"), script,
                    QStringLiteral("--disk"), disk, QStringLiteral("--confirm"), confirmDisk,

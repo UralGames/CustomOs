@@ -124,6 +124,11 @@ SYMBOLIC = {
     "properties": '<circle cx="12" cy="12" r="8.5"/><path d="M12 11v5.5"/><path d="M12 7.6v.2" stroke-width="2.2"/>',
     "file-text": '<path d="M14 3.5H7.5A1.5 1.5 0 0 0 6 5v14a1.5 1.5 0 0 0 1.5 1.5h9A1.5 1.5 0 0 0 18 19V7.5z"/><path d="M14 3.5v4h4M9 12h6M9 15.5h4"/>',
     "drive": '<rect x="3.5" y="7" width="17" height="10" rx="2"/><path d="M17 12h.01M14 12h.01" stroke-width="2.2"/>',
+
+    # --- updates ---------------------------------------------------------------
+    "update": '<path d="M19.5 12a7.5 7.5 0 1 1-2.6-5.7"/><path d="M19.5 4v4.5H15"/><path d="M12 8.5v6.5M9.3 12.3L12 15l2.7-2.7"/>',
+    "shield-check": '<path d="M12 3.5l7 2.6v5.4c0 4.4-2.9 7.7-7 9-4.1-1.3-7-4.6-7-9V6.1z"/><path d="M8.8 12.2l2.2 2.2 4.3-4.4"/>',
+    "history": '<path d="M4.5 12a7.5 7.5 0 1 0 2.3-5.4"/><path d="M4.5 4.5v4.2h4.2"/><path d="M12 8v4.3l2.9 1.9"/>',
 }
 
 # --- Application icons (48x48, full colour, original designs) ---------------
@@ -167,6 +172,13 @@ APPS = {
   <circle cx="35" cy="32.5" r="2.2" fill="#5BC7B4"/>
   <path d="M24 5v16" stroke="#2E9283" stroke-width="4" stroke-linecap="round"/>
   <path d="M16.5 14.5L24 22l7.5-7.5" fill="none" stroke="#2E9283" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>''',
+    # Update: a circular arrow carrying a download arrow, on the pine tile
+    "meridian-update": '''
+  <rect x="4" y="4" width="40" height="40" rx="11" fill="#14695E"/>
+  <path d="M35 24a11 11 0 1 1-3.4-7.9" fill="none" stroke="#E9F7F4" stroke-width="3.4" stroke-linecap="round"/>
+  <path d="M35.5 10.5v7H28.5" fill="none" stroke="#E9F7F4" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M24 17v11" stroke="#5BC7B4" stroke-width="3.4" stroke-linecap="round"/>
+  <path d="M19.2 23.8L24 28.6l4.8-4.8" fill="none" stroke="#5BC7B4" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>''',
     # Generic application fallback
     "meridian-app": '''
   <rect x="4" y="4" width="40" height="40" rx="11" fill="#6B7A85"/>

@@ -764,7 +764,7 @@ void UpdateService::reconcileAfterBoot()
         reason = r.reason;
     else
         reason = tr("slot %1 did not finish starting").arg(p.targetSlot);
-    m_store.addHistory(p.kind, QStringLiteral("rolled-back"), p.fromVersion, p.toVersion, reason);
+    m_store.resolveHistory(p.kind, QStringLiteral("rolled-back"), p.fromVersion, p.toVersion, reason);
     m_store.clearPending();
     saveState();
     setError(UpdateError::make(UpdateError::RolledBack, reason, p.toVersion));
@@ -778,7 +778,7 @@ void UpdateService::pollHealth()
                           && r.when >= bootTime().addSecs(-120);
     if (thisBoot && r.result == QLatin1String("good")) {
         m_healthTimer.stop();
-        m_store.addHistory(p.kind, QStringLiteral("success"), p.fromVersion, m_system.versionText,
+        m_store.resolveHistory(p.kind, QStringLiteral("success"), p.fromVersion, p.toVersion.isEmpty() ? m_system.versionText : p.toVersion,
                            p.kind == QLatin1String("rollback") ? tr("Returned to the previous version")
                                                                : tr("Updated and started successfully"));
         if (p.kind == QLatin1String("update"))
