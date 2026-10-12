@@ -3,7 +3,14 @@ config BR2_PACKAGE_MERIDIAN_DESKTOP
 	depends on BR2_PACKAGE_QT6
 	depends on BR2_PACKAGE_QT6_GL_SUPPORTS
 	depends on BR2_PACKAGE_SYSTEMD
-	depends on BR2_PACKAGE_LINUX_PAM
+	depends on (BR2_ENABLE_LOCALE && BR2_USE_WCHAR) # linux-pam
+	depends on !BR2_STATIC_LIBS # linux-pam
+	depends on BR2_USE_MMU # linux-pam
+	depends on BR2_TOOLCHAIN_GCC_AT_LEAST_4_9 # linux-pam
+	# Selected rather than depended on: "depends on" linux-pam plus
+	# "select foot" formed a Kconfig dependency loop through
+	# util-linux, piglit and wayland.
+	select BR2_PACKAGE_LINUX_PAM
 	select BR2_PACKAGE_QT6BASE_GUI
 	select BR2_PACKAGE_QT6BASE_DBUS
 	select BR2_PACKAGE_QT6BASE_NETWORK

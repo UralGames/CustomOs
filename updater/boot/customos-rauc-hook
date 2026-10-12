@@ -1,0 +1,48 @@
+#!/bin/bash
+# RAUC system handlers of CustomOS (see /run/rauc/system.conf), called as
+#   customos-rauc-pre-install   before RAUC writes the inactive slot
+#   customos-rauc-post-install  after it was written successfully
+# RAUC has already verified the bundle signature; the bundle is mounted at
+# $RAUC_BUNDLE_MOUNT_POINT and its signed manifest is manifest.raucm there.
+
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+GRUBENV=/efi/grub/grubenv
+STATE=/data/customos/update
+
+phase=${1:-$(basename "$0")}
+manifest="$RAUC_BUNDLE_MOUNT_POINT/manifest.raucm"
+new_version=$(sed -n '/^\[update\]/,/^\[/{s/^version=//p}' "$manifest" 2>/dev/null | head -n1)
+. /etc/os-release
+
+case "$phase" in
+    *pre-install)
+        # Refuse downgrades and reinstalls on every installation path (the
+        # update service checks too). An administrator who really wants an
+        # older version creates /run/customos/allow-downgrade first.
+        if [ -e /run/customos/allow-downgrade ]; then
+            echo "customos: allow-downgrade is set, installing $new_version over $VERSION_ID" >&2
+            exit 0
+        fi
+        customos-update compare-versions "$new_version" "$VERSION_ID"
+        case $? in
+            0) exit 0 ;;
+            1) echo "customos: refusing to reinstall the running version $VERSION_ID" >&2; exit 1 ;;
+            2) echo "customos: refusing to downgrade from $VERSION_ID to $new_version" >&2; exit 1 ;;
+            *) echo "customos: invalid version in bundle (\"$new_version\") or system (\"$VERSION_ID\")" >&2; exit 1 ;;
+        esac
+        ;;
+    *post-install)
+        for i in $RAUC_TARGET_SLOTS; do
+            eval "bootname=\${RAUC_SLOT_BOOTNAME_$i:-}"
+            [ -n "$bootname" ] || continue
+            grub-editenv "$GRUBENV" set "${bootname}_VERSION=$new_version"
+            # The next boots of this slot are a trial (see customos-health-check).
+            mkdir -p "$STATE"
+            echo "$bootname" > "$STATE/pending-slot.new" && mv -f "$STATE/pending-slot.new" "$STATE/pending-slot"
+        done
+        sync
+        exit 0
+        ;;
+esac
+echo "customos-rauc-hook: unknown phase $phase" >&2
+exit 1

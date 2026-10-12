@@ -1,0 +1,28 @@
+# CustomOS update settings (read by customos-updated).
+#
+# Local changes belong in /etc/customos/update.conf.d/*.conf; files there
+# override this one and are kept across updates.
+
+[Source]
+# GitHub repository that publishes CustomOS releases ("owner/name" or its
+# https://github.com/... URL). Releases must carry CustomOS-vX.Y.Z.raucb,
+# CustomOS-vX.Y.Z-manifest.json and SHA256SUMS (see docs/OTA-UPDATES.md).
+Repository=@CUSTOMOS_UPDATE_REPOSITORY@
+# GitHub REST API endpoint (GitHub Enterprise: https://HOST/api/v3).
+ApiUrl=https://api.github.com
+# Release channel. Only "stable" (the newest non-pre-release) is supported
+# today; "beta" (pre-releases included) is reserved for later.
+Channel=@CUSTOMOS_UPDATE_CHANNEL@
+# Must match the "compatible" of the update bundles and /etc/rauc/system.conf.
+Compatible=@CUSTOMOS_UPDATE_COMPATIBLE@
+# A private release repository needs a read-only GitHub token. Put it in a
+# root-only file (chmod 600) on the data partition and name the file here:
+#TokenFile=/data/customos/update/github-token
+
+[Updates]
+AutomaticCheck=true
+CheckIntervalHours=6
+StateDirectory=/data/customos/update
+CacheDirectory=/data/customos/update/cache
+# Never install a version older than (or equal to) the running one.
+AllowDowngrade=false

@@ -1,0 +1,26 @@
+[Unit]
+Description=CustomOS update service
+Documentation=file:///usr/share/doc/customos/OTA-UPDATES.md
+Wants=network-online.target rauc.service
+After=network-online.target rauc.service dbus.service customos-ota-setup.service
+# Only meaningful on systems that can be updated; on the live image it still
+# runs so Settings can tell the user why updates are unavailable.
+
+[Service]
+Type=dbus
+BusName=org.customos.Update1
+ExecStart=@CMAKE_INSTALL_FULL_LIBEXECDIR@/customos-updated
+Restart=on-failure
+RestartSec=5
+# Hardening: the service needs the network, the data partition and D-Bus.
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictRealtime=yes
+LockPersonality=yes
+
+[Install]
+WantedBy=multi-user.target

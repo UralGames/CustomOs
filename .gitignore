@@ -1,0 +1,15 @@
+# Build outputs (Buildroot output directories are created next to build.sh)
+/output/
+/output-*/
+/buildroot/
+/build/
+/build-*/
+CustomOS-*.iso
+CustomOS-*.iso.sha256
+/release/out/
+
+# Signing material must never be committed (see docs/SIGNING.md).
+*.key
+*-key.pem
+*.key.pem
+/keys/private/

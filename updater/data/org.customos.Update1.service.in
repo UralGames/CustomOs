@@ -1,0 +1,5 @@
+[D-BUS Service]
+Name=org.customos.Update1
+Exec=@CMAKE_INSTALL_FULL_LIBEXECDIR@/customos-updated
+User=root
+SystemdService=customos-updated.service

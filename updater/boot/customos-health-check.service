@@ -1,0 +1,15 @@
+[Unit]
+Description=CustomOS boot health check (confirm or roll back the booted slot)
+Documentation=file:///usr/share/doc/customos/OTA-UPDATES.md
+ConditionPathExists=/run/customos/boot.env
+After=multi-user.target customos-ota-setup.service rauc.service
+Wants=rauc.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/customos/customos-health-check
+RemainAfterExit=yes
+TimeoutStartSec=15min
+
+[Install]
+WantedBy=multi-user.target

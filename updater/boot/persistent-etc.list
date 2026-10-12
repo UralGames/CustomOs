@@ -1,0 +1,42 @@
+# Settings under /etc that survive an update.
+#
+# Everything an administrator or the desktop changes in /etc is stored on the
+# data partition. When a new version boots for the first time, only the
+# entries below are kept; other changes are moved to
+# /data/customos/etc-backup/<old version>-<date>/ and the new version's
+# defaults apply. One path per line, relative to /etc; a trailing "/" keeps
+# a whole directory. Shell wildcards are allowed.
+
+# Accounts (merged with the system accounts of the new version at every boot)
+passwd
+shadow
+group
+gshadow
+subuid
+subgid
+
+# Identity, time and locale
+hostname
+hosts
+machine-id
+localtime
+timezone
+adjtime
+locale.conf
+vconsole.conf
+
+# Network connections (Wi-Fi passwords, static addresses)
+NetworkManager/system-connections/
+
+# Sign-in and desktop defaults
+meridian/
+
+# Administrator rules and SSH host keys
+sudoers.d/
+ssh/
+
+# Services enabled or disabled locally
+systemd/system/
+
+# Update settings and the token for a private release repository
+customos/update.conf.d/
