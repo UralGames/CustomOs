@@ -5,14 +5,21 @@ CustomOS is a from-source x86_64 Linux system with its own Wayland desktop,
 session (signed in automatically), runs in VirtualBox and VMware, and can
 optionally be installed to a disk.
 
-> **Status — please read.** No ISO came out of the environment this project
-> was written in. Its network blocked the source mirrors the build needs
-> (kernel.org, gnu.org, download.qt.io, freedesktop.org GitLab and others).
-> Without them, neither Buildroot nor an LFS-style build can fetch sources.
+> **Status — please read.** No ISO came out of the cloud environment this
+> project was developed in. Its network policy blocks the hosts Buildroot
+> downloads sources from. In a `make source` run, 178 of 225 packages failed
+> to download. The blocked hosts include:
+> - `sources.buildroot.net`, Buildroot's own mirror and the fallback for every package;
+> - `toolchains.bootlin.com` (the toolchain);
+> - `cdn.kernel.org`, `ftpmirror.gnu.org`, `download.qt.io`, `gitlab.freedesktop.org`, `archive.mesa3d.org`;
+> - `github.com` source archives (labwc, swaylock);
+> - and about 45 more.
+>
 > **`CustomOS-x86_64.iso` therefore does not exist yet.** You produce it by
 > running the one-command build below on a machine with normal internet
-> access. Everything needed is in this repository. See *What was verified*
-> for exactly what has and has not been run.
+> access, or in GitHub Actions (see [docs/RELEASING.md](docs/RELEASING.md)).
+> Everything needed is in this repository. See *What was verified* for
+> exactly what has and has not been run.
 
 ## Build the ISO (one command)
 
@@ -32,6 +39,7 @@ Other commands:
 
 | Command | Purpose |
 |---|---|
+| `./build.sh --ota` | Build the edition with over-the-air updates (A/B layout) in `output-ota/`; see below |
 | `./build.sh --menuconfig` | Change the Buildroot configuration, then build |
 | `./build.sh --clean` | Delete `output/` |
 | `JOBS=4 ./build.sh` | Limit parallelism |
@@ -42,6 +50,39 @@ Host packages needed without Docker (Debian/Ubuntu):
 Run the build as a normal user, not as root.
 
 To run the ISO in a virtual machine, see **[docs/VM-SETUP.md](docs/VM-SETUP.md)**.
+
+## Over-the-air updates
+
+The OTA edition (`./build.sh --ota`, version 0.2.0 and later) updates itself
+from this repository's GitHub Releases:
+1. **Check and offer.** It checks for a new stable release and shows the version, release notes and
+   download size in **Settings › System › Updates** (and the Meridian Update
+   app).
+2. **Download and verify.** It downloads the signed RAUC bundle and verifies its SHA-256 *and* its
+   signature against the CustomOS CA certificate built into the image.
+3. **Install.** It writes the bundle into the inactive half of an A/B disk layout.
+4. **Restart and confirm.** It asks you to restart. GRUB boots the new version on trial, and a health check
+   confirms it. A version that fails to start is rolled back automatically.
+5. **Keep your data.** Files, accounts and supported settings live on a separate data partition
+   and are kept.
+
+| Document | Contents |
+|---|---|
+| [docs/OTA-UPDATES.md](docs/OTA-UPDATES.md) | How updates work: release files, verification, A/B layout, rollback, configuration |
+| [docs/SIGNING.md](docs/SIGNING.md) | Creating the signing keys, GitHub Actions secrets, key rotation |
+| [docs/RELEASING.md](docs/RELEASING.md) | Publishing a version (tag → GitHub Actions, or locally) |
+| [docs/VERSIONING.md](docs/VERSIONING.md) | Version numbers, channels (stable; beta reserved) |
+| [docs/MIGRATION.md](docs/MIGRATION.md) | Your existing build, the first OTA build, moving from CustomOS 0.1 |
+
+Before the first OTA build, create the keys once:
+`release/keys/create-ota-keys.sh` (private keys stay in `~/.customos-signing/`,
+only the public certificate goes into `keys/`).
+
+**Live ISO vs. installed system.** The live session runs from read-only
+media and is never updated; install it to a disk to receive updates.
+CustomOS 0.1 installations use a single-partition layout and must be
+reinstalled once to get the A/B layout; see
+[docs/MIGRATION.md](docs/MIGRATION.md).
 
 ## Repository layout
 
@@ -72,7 +113,18 @@ desktop/                    the Meridian desktop (CMake, Qt 6.5+)
   installer/                graphical installer + privileged install script
   session/                  labwc config, themes, session script, .desktop files
   assets/                   generated icons, wallpapers, shadows; Inter + JetBrains Mono fonts
-docs/                       VM setup, architecture
+  apps/settings › System › Updates, update/ (Meridian Update app + QML module)
+updater/                    update service customos-updated, CLI customos-update,
+  boot/                     preinit, A/B GRUB menu, health check, RAUC config and hooks
+  installer/                customos-install-ab (A/B layout installer)
+br2-external/package/customos-updater   its Buildroot recipe
+br2-external/configs/customos_x86_64_ota_defconfig   the OTA edition
+release/                    signing keys, signed bundle + release files, GitHub publishing
+keys/                       public update CA certificate (no private keys)
+.github/workflows/          CI checks; release build and publishing
+tests/                      Buildroot config check, QEMU end-to-end test, UI mock
+VERSION, CHANGELOG.md       version and release notes
+docs/                       VM setup, architecture, updates, signing, releasing
 ```
 
 ## How it is built, and why not hand-run LFS
@@ -151,8 +203,11 @@ Safeguards:
 - It also refuses if any partition of the disk is mounted.
 - Nothing is erased silently.
 
-The installed layout is GPT: a 1 MiB BIOS-boot partition, a 512 MiB EFI
-system partition (mounted at `/boot`) and an ext4 root. GRUB is installed for
+The installed layout of the base edition is GPT: a 1 MiB BIOS-boot
+partition, a 512 MiB EFI system partition (mounted at `/boot`) and an ext4
+root. The OTA edition's installer creates the A/B layout instead (two
+read-only system slots and a data partition; see
+[docs/OTA-UPDATES.md](docs/OTA-UPDATES.md#ab-disk-layout-installed-systems)). GRUB is installed for
 both UEFI and legacy BIOS, so the disk boots either way. On the installed
 system:
 - the live user, autologin and passwordless sudo are removed;
@@ -167,15 +222,58 @@ the pixman renderer, and screenshots taken with grim.
 - The shell renders correctly. The start menu, quick settings, calendar, notification centre, toasts, task view and context menus open.
 - Live theme, accent and wallpaper changes propagate.
 - The sign-in daemon's real PAM path rejects a wrong password, and starts the session as the user with privileges dropped.
-- `make customos_x86_64_defconfig` resolves with every requested option kept.
+- Both defconfigs resolve with real Buildroot 2026.02.3 with no Kconfig
+  warnings and every requested option kept (`tests/check-buildroot-config.sh`).
+  `make show-info` and `check-package` pass. This found and fixed a real
+  error: a recursive Kconfig dependency in `meridian-desktop`. The resolved
+  base configuration is identical before and after the fix.
 - Every symbol in `linux.fragment` exists in Linux 6.19's Kconfig.
 
+Over-the-air updates:
+- **Unit tests** of the update service (`updater/tests`, 5 suites):
+  - version order;
+  - manifest and `SHA256SUMS` parsing;
+  - state and history;
+  - the GitHub client against a local HTTP server: stable and beta
+    channels, a repository without releases, rate limits, no plain HTTP,
+    the token not sent to the storage host, resumed and oversized
+    downloads;
+  - the whole check → download → verify → install → confirm flow against
+    a fake RAUC on D-Bus, including corrupted and untrusted downloads, a
+    signed version that differs from the release, a failed installation,
+    a rolled-back boot and the live session.
+- **Release tooling** with real RAUC: `release/make-release.sh` builds and
+  signs a verity bundle, verifies it like a target does, and refuses a
+  bundle signed by another CA.
+- **End-to-end in QEMU** (`tests/e2e`; on real partitions with real GRUB,
+  RAUC and systemd), using a *test fixture* root file system built from
+  Ubuntu packages, not CustomOS:
+  1. the A/B installer;
+  2. first boot (BIOS and UEFI);
+  3. an update from a mock GitHub API, with files, accounts and settings
+     kept;
+  4. manual rollback;
+  5. automatic rollback of a version that fails its health check, and of
+     one that panics on every boot;
+  6. refusal of a bundle signed with an untrusted key, and of a downgrade.
+
+  See [tests/e2e/README.md](tests/e2e/README.md).
+- **Settings › System › Updates and Meridian Update**, rendered against a
+  mock of the update service in every state: up to date, available,
+  downloading, restart required, rolled back, signature error, live
+  session; light and dark.
+
 These have **not** run:
-- the Buildroot build itself, so no ISO;
+- the Buildroot build itself, so no ISO and no OTA image or bundle built by
+  Buildroot;
 - the kernel;
 - booting in VirtualBox or VMware;
 - GPU paths;
-- the installer against a real disk;
+- the base edition's installer against a real disk (the A/B installer ran
+  in QEMU, see above);
+- RAUC 1.15 as Buildroot builds it (the tests used Ubuntu's RAUC 1.11);
+- the GitHub Actions workflows, and publishing to real GitHub Releases (the
+  tests used a mock of the API);
 - the newest-feature labwc 0.9.8 keybinds (`onRelease`, `UnSnap`, etc. — the test host had 0.7).
 
 Expect to fix small issues on the first real build. The places most likely

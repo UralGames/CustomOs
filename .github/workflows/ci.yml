@@ -1,0 +1,78 @@
+# Fast checks on every push and pull request (no full image build).
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  updater:
+    name: Update service and CLI (unit tests)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Qt 6
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends qt6-base-dev cmake ninja-build g++ dbus
+      - name: Build
+        run: |
+          cmake -S updater -B build/updater -G Ninja -DCUSTOMOS_UPDATER_BUILD_TESTS=ON \
+                -DCMAKE_CXX_FLAGS="-Wall -Wextra -Werror"
+          cmake --build build/updater
+      - name: Test
+        run: dbus-run-session -- ctest --test-dir build/updater --output-on-failure
+
+  desktop:
+    name: Meridian applications and Meridian Update (compile)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Qt 6
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cmake ninja-build g++ \
+            qt6-base-dev qt6-declarative-dev qt6-svg-dev qt6-tools-dev-tools \
+            qml6-module-qtquick qml6-module-qtquick-controls qml6-module-qtquick-layouts \
+            qml6-module-qtquick-templates qml6-module-qtqml-workerscript qml6-module-qtquick-window \
+            libgl-dev libxkbcommon-dev
+      # The shell needs LayerShellQt and the sign-in service PAM; the image
+      # build covers them. Everything else, including the update UI, is built here.
+      - name: Build
+        run: |
+          cmake -S desktop -B build/desktop -G Ninja -DMERIDIAN_BUILD_SHELL=OFF -DMERIDIAN_BUILD_LOGIN=OFF
+          cmake --build build/desktop
+
+  scripts:
+    name: Shell and Python scripts
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck
+        run: |
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends shellcheck
+          shellcheck -x -S warning -e SC2093 \
+            build.sh updater/boot/customos-preinit updater/boot/customos-health-check \
+            updater/boot/customos-ota-setup updater/boot/customos-rauc-hook updater/boot/ota-lib.sh \
+            updater/installer/customos-install-ab release/make-release.sh release/publish-github-release.sh \
+            release/keys/create-ota-keys.sh br2-external/board/customos/ota/post-image-ota.sh \
+            tests/check-buildroot-config.sh tests/e2e/build-images.sh
+      - name: Python syntax
+        run: python3 -m py_compile tests/e2e/*.py tests/ui/*.py
+
+  buildroot-config:
+    name: Buildroot configuration (no download)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: buildroot
+          key: buildroot-${{ hashFiles('build.sh') }}
+      - name: Host tools for check-package
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends python3-magic flake8 shellcheck
+      - name: Check
+        run: tests/check-buildroot-config.sh

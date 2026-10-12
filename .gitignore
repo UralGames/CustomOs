@@ -13,3 +13,6 @@ CustomOS-*.iso.sha256
 *-key.pem
 *.key.pem
 /keys/private/
+
+# Python bytecode
+__pycache__/

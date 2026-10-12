@@ -4,7 +4,7 @@
 # Build: ./build.sh --ota   (or: make BR2_EXTERNAL=../br2-external customos_x86_64_ota_defconfig && make)
 #
 # Keep the shared part identical to customos_x86_64_defconfig
-# (tests/check-defconfigs.sh verifies it); OTA additions are at the end and
+# (tests/check-buildroot-config.sh verifies it); OTA additions are at the end and
 # marked "OTA:".
 
 # ---- Architecture and toolchain ---------------------------------------------
@@ -209,6 +209,12 @@ BR2_PACKAGE_HOST_XORRISO=y
 BR2_PACKAGE_CUSTOMOS_UPDATER=y
 BR2_PACKAGE_CUSTOMOS_UPDATER_REPOSITORY="UralGames/CustomOs"
 BR2_PACKAGE_OPENSSL=y
+# TLS for the update downloads (Qt Network). Buildroot's defaults keep SSLv3,
+# weak ciphers and debug code; none of it is needed.
+# BR2_PACKAGE_LIBOPENSSL_ENABLE_SSL is not set
+# BR2_PACKAGE_LIBOPENSSL_ENABLE_SSL3 is not set
+# BR2_PACKAGE_LIBOPENSSL_ENABLE_WEAK_SSL is not set
+# BR2_PACKAGE_LIBOPENSSL_UNSECURE is not set
 BR2_PACKAGE_RAUC=y
 BR2_PACKAGE_RAUC_DBUS=y
 BR2_PACKAGE_RAUC_JSON=y

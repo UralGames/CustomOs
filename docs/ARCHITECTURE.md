@@ -87,3 +87,18 @@ and style modules:
 6. writes `grub.cfg` with live, safe and text entries.
 
 Progress is reported to the GUI as `PROGRESS <n> <text>` lines.
+
+The OTA edition uses `/usr/libexec/customos-install-ab` instead when it is
+present (same arguments and progress protocol). It creates the A/B layout
+and writes the verified system image into slot A. See
+[OTA-UPDATES.md](OTA-UPDATES.md).
+
+## Updates (OTA edition)
+
+`customos-updated` (system bus `org.customos.Update1`) checks GitHub
+Releases and installs signed RAUC bundles into the inactive A/B slot.
+`customos-preinit` assembles the persistent data partition before systemd
+starts, and `customos-health-check` confirms a new version or rolls it back.
+The Settings page and `meridian-update` are clients of the service
+(`desktop/update`, QML module `Meridian.Update`). Details are in
+[OTA-UPDATES.md](OTA-UPDATES.md).
