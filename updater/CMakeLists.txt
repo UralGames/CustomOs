@@ -93,6 +93,15 @@ set(SLOT_B_DEVICE "@SLOT_B_DEVICE@")
 configure_file(boot/rauc-system.conf rauc-system.conf @ONLY)
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/rauc-system.conf DESTINATION ${CUSTOMOS_LIBDIR})
 install(FILES boot/health.conf DESTINATION ${CMAKE_INSTALL_FULL_SYSCONFDIR}/customos)
+# RAUC reads /etc/rauc/system.conf, which points at the file customos-preinit
+# writes for the booted disk; RAUC only runs where that file exists.
+install(FILES boot/rauc-service-customos.conf
+        DESTINATION ${CMAKE_INSTALL_PREFIX}/lib/systemd/system/rauc.service.d
+        RENAME 10-customos.conf)
+install(CODE "
+    file(MAKE_DIRECTORY \$ENV{DESTDIR}${CMAKE_INSTALL_FULL_SYSCONFDIR}/rauc)
+    execute_process(COMMAND \${CMAKE_COMMAND} -E create_symlink /run/rauc/system.conf
+                    \$ENV{DESTDIR}${CMAKE_INSTALL_FULL_SYSCONFDIR}/rauc/system.conf)")
 install(PROGRAMS installer/customos-install-ab DESTINATION ${CMAKE_INSTALL_LIBEXECDIR})
 
 if(CUSTOMOS_UPDATER_BUILD_TESTS)

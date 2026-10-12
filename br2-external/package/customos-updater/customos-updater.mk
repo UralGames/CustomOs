@@ -45,8 +45,9 @@ define CUSTOMOS_UPDATER_INSTALL_SYSTEM
 		$(TARGET_DIR)/usr/lib/systemd/system-preset/60-customos-updater.preset
 	$(INSTALL) -D -m 0644 $(CUSTOMOS_UPDATER_PKGDIR)/customos-watchdog.conf \
 		$(TARGET_DIR)/usr/lib/systemd/system.conf.d/60-customos-watchdog.conf
-	# RAUC reads /run/rauc/system.conf, written at boot for the actual disk.
-	rm -f $(TARGET_DIR)/etc/rauc/system.conf
+	# /etc/rauc/system.conf -> /run/rauc/system.conf, written at boot for
+	# the disk the system started from (installed by customos-updater).
+	test -L $(TARGET_DIR)/etc/rauc/system.conf
 endef
 
 CUSTOMOS_UPDATER_POST_INSTALL_TARGET_HOOKS += \

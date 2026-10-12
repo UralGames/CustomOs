@@ -40,6 +40,11 @@ mountpoint -q /sys || mount -t sysfs sysfs /sys
 mountpoint -q /dev || mount -t devtmpfs devtmpfs /dev
 mountpoint -q /run || mount -t tmpfs -o mode=0755,nosuid,nodev,size=20% tmpfs /run
 mkdir -p /run/customos
+# devtmpfs lacks the /dev/fd links that shells expect (systemd adds them later).
+[ -e /dev/fd ] || ln -s /proc/self/fd /dev/fd
+[ -e /dev/stdin ] || ln -s /proc/self/fd/0 /dev/stdin
+[ -e /dev/stdout ] || ln -s /proc/self/fd/1 /dev/stdout
+[ -e /dev/stderr ] || ln -s /proc/self/fd/2 /dev/stderr
 
 SLOT=""; DATA_SPEC=""; ROOT_SPEC=""
 for arg in $(cat /proc/cmdline); do
@@ -113,6 +118,7 @@ for f in passwd group shadow gshadow; do
 done
 
 # ---- runtime mounts -------------------------------------------------------------------
+modprobe overlay 2>/dev/null || true   # built in on CustomOS; a module on other kernels
 if ! ota_mount_tree "" /data; then
     degraded "cannot set up the persistent overlays"
 fi
@@ -140,8 +146,8 @@ PARTUUID=$ESP_UUID   /efi   vfat      umask=0077,nofail   0 0
 EOF
 mv -f /etc/fstab.customos-new /etc/fstab
 
-# RAUC finds its configuration in /run/rauc/system.conf (the image ships no
-# /etc/rauc/system.conf), with the device names of the disk we booted from.
+# RAUC's configuration, with the device names of the disk we booted from.
+# /etc/rauc/system.conf in the image is a symbolic link to this file.
 mkdir -p /run/rauc
 if [ -n "$A_DEV" ]; then
     sed -e "s|@SLOT_A_DEVICE@|$A_DEV|" -e "s|@SLOT_B_DEVICE@|$B_DEV|" \

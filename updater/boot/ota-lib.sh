@@ -17,6 +17,8 @@
 #   /root overlay, upper = /data/overlay/root/upper
 #   /home bind mount of /data/home
 
+# The constants below are used by the scripts that source this file.
+# shellcheck disable=SC2034
 OTA_LIBDIR=${OTA_LIBDIR:-/usr/lib/customos}
 OTA_DATA_LABEL=customos-data
 OTA_PART_ESP=2
@@ -118,8 +120,11 @@ ota_etc_keep() {
 # (into BACKUPDIR), so the new version's defaults apply.
 ota_prune_etc() {
     OTA_UPPER=$1
-    local backup=$2 path rel moved=0
+    local backup=$2 path rel moved=0 list
     [ -d "$OTA_UPPER" ] || return 0
+    # A file, not process substitution: at early boot there is no /dev/fd.
+    list=$(mktemp "${TMPDIR:-/run}/customos-prune.XXXXXX") || return 1
+    find "$OTA_UPPER" -mindepth 1 -depth -print0 > "$list"
     while IFS= read -r -d '' path; do
         rel=${path#"$OTA_UPPER"/}
         ota_etc_keep "$rel" && continue
@@ -129,7 +134,8 @@ ota_prune_etc() {
         fi
         mkdir -p "$backup/$(dirname "$rel")"
         mv -f "$path" "$backup/$rel" && moved=$((moved + 1))
-    done < <(find "$OTA_UPPER" -mindepth 1 -depth -print0)
+    done < "$list"
+    rm -f "$list"
     [ "$moved" -gt 0 ] && ota_log "reset $moved /etc file(s) to the new version's defaults (backup: $backup)"
     return 0
 }
@@ -160,7 +166,7 @@ _ota_is_local_id() {
 ota_merge_accounts() {
     local lower=$1 cur=$2 out=$3
     local name pw uid gid rest line members
-    declare -A lowerUser=() lowerGroup=() curShadow=() curGshadow=() curMembers=() keptUser=() lowerGroupGid=()
+    declare -A lowerUser=() lowerGroup=() curShadow=() curGshadow=() curMembers=() keptUser=()
     mkdir -p "$out"
 
     # -- passwd
@@ -211,7 +217,6 @@ ota_merge_accounts() {
         [ -n "$name" ] || continue
         _ota_is_live_user "$name" && continue
         lowerGroup[$name]=1
-        lowerGroupGid[$name]=$gid
         members=$(_ota_union_members "$members" "${curMembers[$name]:-}")
         printf '%s:%s:%s:%s\n' "$name" "$pw" "$gid" "$members" >> "$out/group"
     done < "$lower/group"
