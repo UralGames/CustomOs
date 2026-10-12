@@ -62,6 +62,10 @@ jobs:
             tests/check-buildroot-config.sh tests/e2e/build-images.sh
       - name: Python syntax
         run: python3 -m py_compile tests/e2e/*.py tests/ui/*.py
+      # actionlint checks the workflows themselves, including their scripts
+      # with shellcheck.
+      - name: Workflows (actionlint)
+        run: docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.7 -color
 
   buildroot-config:
     name: Buildroot configuration (no download)

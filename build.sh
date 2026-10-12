@@ -5,6 +5,7 @@
 #   ./build.sh --docker        build inside a container (only Docker/Podman needed)
 #   ./build.sh --menuconfig    adjust the Buildroot configuration, then build
 #   ./build.sh --clean         remove the build output and start over
+#   ./build.sh --source        only download (and checksum) all sources
 #   ./build.sh --ota [...]     build the A/B over-the-air update edition
 #                              (customos_x86_64_ota_defconfig) in output-ota/;
 #                              combine with the options above, e.g. --ota --docker
@@ -53,6 +54,7 @@ docker_build() {
 }
 
 menuconfig=0
+source_only=0
 case "${1:-}" in
     --docker) shift; docker_build "$@" ;;
     --menuconfig) menuconfig=1 ;;
@@ -60,7 +62,8 @@ case "${1:-}" in
         echo "Removing $OUT"
         rm -rf -- "$OUT"
         exit 0 ;;
-    -h|--help) sed -n '2,15p' "$0"; exit 0 ;;
+    --source) source_only=1 ;;
+    -h|--help) sed -n '2,16p' "$0"; exit 0 ;;
     "") ;;
     *) die "unknown option $1 (see --help)" ;;
 esac
@@ -103,6 +106,13 @@ if [ ! -f "$OUT/.config" ]; then
 fi
 if [ "$menuconfig" -eq 1 ]; then
     make -C "$BUILDROOT_DIR" O="$OUT" menuconfig
+fi
+
+if [ "$source_only" -eq 1 ]; then
+    echo ">>> Downloading sources to ${BR2_DL_DIR:-$BUILDROOT_DIR/dl}"
+    make -C "$BUILDROOT_DIR" O="$OUT" source
+    echo "Done: all sources downloaded"
+    exit 0
 fi
 
 echo ">>> Building (jobs: $JOBS) - output in $OUT"

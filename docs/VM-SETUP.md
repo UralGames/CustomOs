@@ -3,6 +3,14 @@
 You need `CustomOS-x86_64.iso`, produced by `./build.sh` (see the README).
 The ISO boots with both legacy BIOS and UEFI firmware.
 
+From GitHub Actions (*Build ISO* workflow):
+1. Open the run, then download the artifact *CustomOS-x86_64-iso-…*.
+2. Unzip it; VirtualBox can't open the .zip itself.
+3. Check the download:
+   - Linux or macOS: `sha256sum -c CustomOS-x86_64.iso.sha256`;
+   - Windows: compare `certutil -hashfile CustomOS-x86_64.iso SHA256` with the
+     `.sha256` file.
+
 Recommended VM resources:
 - **4 GB RAM** (at least 3 GB). The live system runs entirely from RAM.
 - **2 or more CPUs.**

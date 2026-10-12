@@ -17,7 +17,7 @@ optionally be installed to a disk.
 >
 > **`CustomOS-x86_64.iso` therefore does not exist yet.** You produce it by
 > running the one-command build below on a machine with normal internet
-> access, or in GitHub Actions (see [docs/RELEASING.md](docs/RELEASING.md)).
+> access, or with the *Build ISO* workflow in GitHub Actions (below).
 > Everything needed is in this repository. See *What was verified* for
 > exactly what has and has not been run.
 
@@ -42,6 +42,7 @@ Other commands:
 | `./build.sh --ota` | Build the edition with over-the-air updates (A/B layout) in `output-ota/`; see below |
 | `./build.sh --menuconfig` | Change the Buildroot configuration, then build |
 | `./build.sh --clean` | Delete `output/` |
+| `./build.sh --source` | Only download (and checksum) all sources |
 | `JOBS=4 ./build.sh` | Limit parallelism |
 | `make -C buildroot O=$PWD/output meridian-desktop-rebuild all` | Rebuild only the desktop after editing `desktop/` |
 
@@ -50,6 +51,28 @@ Host packages needed without Docker (Debian/Ubuntu):
 Run the build as a normal user, not as root.
 
 To run the ISO in a virtual machine, see **[docs/VM-SETUP.md](docs/VM-SETUP.md)**.
+
+### In GitHub Actions
+
+**Actions › Build ISO › Run workflow** builds the same ISO on GitHub's
+runners (`.github/workflows/build-iso.yml`); no signing keys are needed. The
+result is attached to the run as the artifact
+*CustomOS-x86_64-iso-&lt;commit&gt;*, a .zip holding the ISO and its
+checksum.
+- **First run.** The *Run workflow* button appears once the workflow is on
+  the default branch (`main`).
+- **Checks before building.** First, all sources are downloaded and their
+  checksums verified, which takes minutes. Only then does the build start.
+- **Long builds.** A GitHub-hosted job may run for 6 hours. A first build
+  on a 2-core runner (private repositories) takes longer. So the build runs
+  in up to three consecutive jobs, each continuing from the compiler cache
+  of the previous one. Later runs reuse the download and compiler caches.
+- **Private repositories.** Artifacts count against the account's Actions
+  storage, so the ISO is kept for 7 days by default (*retention_days*).
+  Public repositories have no such limit and get 4-core runners.
+- **Pushes.** A push that changes the configuration or a package recipe
+  runs only the source check. It also lists checksums for recipes that
+  have no `.hash` file.
 
 ## Over-the-air updates
 
