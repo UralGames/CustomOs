@@ -255,6 +255,9 @@ the pixman renderer, and screenshots taken with grim.
   error: a recursive Kconfig dependency in `meridian-desktop`. The resolved
   base configuration is identical before and after the fix.
 - Every symbol in `linux.fragment` exists in Linux 6.19's Kconfig.
+- All sources of the base edition download on GitHub's runners, about 2 GB
+  in total, with Buildroot's checksums verified (*Build ISO* workflow,
+  source check).
 
 Over-the-air updates:
 - **Unit tests** of the update service (`updater/tests`, 5 suites):
@@ -306,12 +309,10 @@ These have **not** run:
 Expect to fix small issues on the first real build. The places most likely
 to need attention:
 
-1. **Recipes for the six new packages.** labwc, libsfdo, layer-shell-qt,
-   extra-cmake-modules, swaylock and grim have no `.hash` files yet, because
-   their tarballs could not be downloaded here to compute checksums.
-   Buildroot warns and continues. After a first successful download, add
-   hashes with `utils/add-custom-hashes`, or by writing `sha256  <hash>
-   <file>` lines next to each `.mk`.
+1. **The six new packages** (labwc, libsfdo, layer-shell-qt,
+   extra-cmake-modules, swaylock, grim) have only been downloaded so far, not
+   built. Their sources download on GitHub's runners, and their `.hash` files
+   come from those downloads.
 2. **The UEFI GRUB image** must fit the 1 MiB FAT image Buildroot creates
    inside the ISO. The module list is kept short for that reason.
 3. **Live-image size and RAM.** The root file system is loaded into RAM as
