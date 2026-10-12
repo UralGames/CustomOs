@@ -1,34 +1,29 @@
-# Build the bootable live/installer ISO, CustomOS-x86_64.iso, of the base
-# edition (customos_x86_64_defconfig). No signing keys are needed: this edition
-# has no over-the-air updates. The OTA edition is built and signed by
-# release.yml.
+
+# Build the bootable live/installer ISO, CustomOS-x86_64.iso.
+# Base edition: customos_x86_64_defconfig.
+# No OTA signing keys are required.
 #
-# Start it by hand: Actions › Build ISO › Run workflow. The ISO is kept as a
-# workflow artifact. Downloading it gives a .zip holding
-# CustomOS-x86_64.iso and its .sha256; see docs/VM-SETUP.md to boot it.
+# Manual build:
+# Actions > Build ISO > Run workflow
 #
-# A first build can take longer than the 6 hours a GitHub-hosted job may run
-# (private repositories get 2-core runners, public ones 4). So the build runs
-# in up to three consecutive jobs. Each job stops in time to save the download
-# and compiler caches, and the next one starts from them. Packages already
-# compiled come out of the compiler cache, so each job gets further.
+# The completed ISO and SHA256 checksum are uploaded as artifacts.
 #
-# A push that changes the Buildroot configuration, a package recipe or this
-# workflow only runs the first job. That job downloads every source, so a
-# broken download or checksum shows up in minutes rather than hours later. It
-# also prints checksums for recipes that have no .hash file yet.
+# The first build may require several hours.
+# Up to three build jobs are supported.
 #
-# Optional repository variable: CUSTOMOS_BUILD_RUNNER, a runner label for a
-# self-hosted or larger runner (default ubuntu-24.04).
+# Download and compiler caches are reused where possible.
+
 name: Build ISO
 
 on:
   workflow_dispatch:
     inputs:
-      retention_days: 7
-        description: Days to keep the ISO artifact (artifacts of private repositories count against the account's storage)
+      retention_days:
+        description: Days to keep the ISO artifact
         type: number
+        required: false
         default: 7
+
   push:
     paths:
       - build.sh
@@ -48,56 +43,100 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+
   sources:
     name: Download and check all sources
+
     runs-on: ${{ vars.CUSTOMOS_BUILD_RUNNER || 'ubuntu-24.04' }}
+
     timeout-minutes: 90
+
     env:
       BR2_DL_DIR: ${{ github.workspace }}/dl
-    steps:
-      - uses: actions/checkout@v4
 
-      - name: Host packages
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install host packages
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y -q --no-install-recommends build-essential bc cpio file git libncurses-dev \
-            perl python3 rsync unzip wget xz-utils bzip2 zstd
+          sudo apt-get install -y -q --no-install-recommends \
+            build-essential \
+            bc \
+            cpio \
+            file \
+            git \
+            libncurses-dev \
+            perl \
+            python3 \
+            rsync \
+            unzip \
+            wget \
+            xz-utils \
+            bzip2 \
+            zstd
+
           mkdir -p "$BR2_DL_DIR"
 
-      - name: Restore the downloads
+      - name: Restore source downloads
         id: dl
         uses: actions/cache/restore@v4
         with:
           path: dl
           key: buildroot-dl-iso-${{ hashFiles('build.sh', 'br2-external/configs/customos_x86_64_defconfig', 'br2-external/package/**') }}
-          restore-keys: buildroot-dl-iso-
+          restore-keys: |
+            buildroot-dl-iso-
 
-      - name: Download all sources (checksums are verified)
-        run: ./build.sh --source
+      - name: Download all sources
+        run: |
+          ./build.sh --source
 
-      - name: Checksums for recipes without a .hash file
+      - name: Check downloaded sources
+        shell: bash
         run: |
           {
-            echo "### Sources"
+            echo "### CustomOS Sources"
             echo
-            echo "All sources downloaded; $(du -sh "$BR2_DL_DIR" | cut -f1) in total."
+            echo "All sources downloaded."
+            echo
+            echo "Total download size:"
+            du -sh "$BR2_DL_DIR"
           } >> "$GITHUB_STEP_SUMMARY"
+
           missing=""
+
           for dir in br2-external/package/*/; do
             pkg=$(basename "$dir")
-            ls "$dir"*.hash >/dev/null 2>&1 && continue
-            [ -d "$BR2_DL_DIR/$pkg" ] || continue      # built from this repository (no download)
-            missing+="# br2-external/package/$pkg/$pkg.hash"$'\n'"# Locally calculated"$'\n'
+
+            if ls "$dir"*.hash >/dev/null 2>&1; then
+              continue
+            fi
+
+            if [ ! -d "$BR2_DL_DIR/$pkg" ]; then
+              continue
+            fi
+
+            missing+="# br2-external/package/$pkg/$pkg.hash"$'\n'
+            missing+="# Locally calculated"$'\n'
+
             for f in "$BR2_DL_DIR/$pkg"/*; do
-              [ -f "$f" ] && missing+="sha256  $(sha256sum "$f" | cut -d' ' -f1)  $(basename "$f")"$'\n'
+              if [ -f "$f" ]; then
+                hash=$(sha256sum "$f" | cut -d' ' -f1)
+                filename=$(basename "$f")
+                missing+="sha256  $hash  $filename"$'\n'
+              fi
             done
+
             missing+=$'\n'
           done
+
           if [ -n "$missing" ]; then
             printf '%s' "$missing"
+
             {
               echo
-              echo "Recipes without a .hash file (Buildroot downloads them unchecked). Checksums of today's downloads:"
+              echo "### Missing package hash files"
               echo
               echo '```'
               printf '%s' "$missing"
@@ -105,7 +144,7 @@ jobs:
             } >> "$GITHUB_STEP_SUMMARY"
           fi
 
-      - name: Save the downloads
+      - name: Save source downloads
         if: steps.dl.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
@@ -114,30 +153,42 @@ jobs:
 
   build-1:
     name: Build (job 1)
+
     needs: sources
+
     if: github.event_name == 'workflow_dispatch'
+
     uses: ./.github/workflows/build-iso-attempt.yml
+
     with:
       attempt: 1
       last: false
-      retention_days: ${{ inputs.retention_days }}
+      retention_days: 7
 
   build-2:
     name: Build (job 2, continues job 1)
+
     needs: build-1
+
     if: needs.build-1.outputs.result == 'timeout'
+
     uses: ./.github/workflows/build-iso-attempt.yml
+
     with:
       attempt: 2
       last: false
-      retention_days: ${{ inputs.retention_days }}
+      retention_days: 7
 
   build-3:
     name: Build (job 3, continues job 2)
+
     needs: build-2
+
     if: needs.build-2.outputs.result == 'timeout'
+
     uses: ./.github/workflows/build-iso-attempt.yml
+
     with:
       attempt: 3
       last: true
-      retention_days: ${{ inputs.retention_days }}
+      retention_days: 7
