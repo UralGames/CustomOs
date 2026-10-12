@@ -4,6 +4,7 @@
 #include <QDBusMessage>
 #include <QDBusPendingCallWatcher>
 #include <QDBusPendingReply>
+#include <QDBusReply>
 #include <QDBusServiceWatcher>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -28,6 +29,20 @@ static QDBusConnection updateBus()
                                                                                    : QDBusConnection::systemBus();
 }
 
+// The service is D-Bus activated, so it is installed when the bus can start it
+// (or it is already running), even before it has answered.
+static bool serviceInstalled(const QDBusConnection &bus)
+{
+    QDBusConnectionInterface *bi = bus.interface();
+    if (!bi)
+        return false;
+    const QDBusReply<bool> running = bi->isServiceRegistered(QString::fromLatin1(Service));
+    if (running.isValid() && running.value())
+        return true;
+    const QDBusReply<QStringList> names = bi->activatableServiceNames();
+    return names.isValid() && names.value().contains(QString::fromLatin1(Service));
+}
+
 UpdateClient *UpdateClient::create(QQmlEngine *, QJSEngine *)
 {
     static UpdateClient *c = new UpdateClient();
@@ -41,6 +56,7 @@ UpdateClient::UpdateClient(QObject *parent)
       m_watcher(new QDBusServiceWatcher(QString::fromLatin1(Service), m_bus,
                                         QDBusServiceWatcher::WatchForRegistration
                                             | QDBusServiceWatcher::WatchForUnregistration, this)),
+      m_installed(serviceInstalled(m_bus)),
       m_admin(isAdministrator())
 {
     m_bus.connect(QString::fromLatin1(Service), QString::fromLatin1(Path), QString::fromLatin1(Interface),
@@ -110,6 +126,10 @@ void UpdateClient::setAvailable(bool available)
         return;
     m_available = available;
     emit serviceAvailableChanged();
+    if (available && !m_installed) {
+        m_installed = true;
+        emit installedChanged();
+    }
 }
 
 void UpdateClient::setStatus(const QVariantMap &status)

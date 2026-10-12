@@ -16,6 +16,8 @@ class QDBusServiceWatcher;
 // org.customos.Update1 on the system bus). The service does all the work;
 // this object mirrors its status and forwards the buttons' actions.
 //
+//   Updates.installed     the update service is part of this system (the
+//                         base edition has none; then nothing is offered)
 //   Updates.status        the service's GetStatus() map (state, versions,
 //                         progress, error, ...), updated live
 //   Updates.history       update history, newest first
@@ -29,6 +31,7 @@ class UpdateClient : public QObject
     Q_OBJECT
     QML_NAMED_ELEMENT(Updates)
     QML_SINGLETON
+    Q_PROPERTY(bool installed READ installed NOTIFY installedChanged)
     Q_PROPERTY(bool serviceAvailable READ serviceAvailable NOTIFY serviceAvailableChanged)
     Q_PROPERTY(QVariantMap status READ status NOTIFY statusChanged)
     Q_PROPERTY(QVariantList history READ history NOTIFY historyChanged)
@@ -39,6 +42,7 @@ public:
     static UpdateClient *create(QQmlEngine *, QJSEngine *);
     explicit UpdateClient(QObject *parent = nullptr);
 
+    bool installed() const { return m_installed; }
     bool serviceAvailable() const { return m_available; }
     QVariantMap status() const { return m_status; }
     QVariantList history() const { return m_history; }
@@ -61,6 +65,7 @@ public:
     static bool isAdministrator();
 
 signals:
+    void installedChanged();
     void serviceAvailableChanged();
     void statusChanged();
     void historyChanged();
@@ -83,6 +88,7 @@ private:
     QTimer m_poll;
     QVariantMap m_status;
     QVariantList m_history;
+    bool m_installed = false;
     bool m_available = false;
     bool m_admin = false;
     int m_pending = 0;

@@ -17,6 +17,7 @@ dbus-update-activation-environment --systemd WAYLAND_DISPLAY DISPLAY XDG_CURRENT
 
 # Update notifications: announces new CustomOS versions, a pending restart or
 # an update that was rolled back (Meridian Update, talks to customos-updated).
-if command -v meridian-update >/dev/null 2>&1; then
+# Only the OTA edition has the update service (customos-update is its CLI).
+if command -v meridian-update >/dev/null 2>&1 && command -v customos-update >/dev/null 2>&1; then
   meridian-update --notify &
 fi

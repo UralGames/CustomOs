@@ -35,10 +35,12 @@ SettingsPage {
         }
     }
 
-    // Updates (opens the System › Updates sub-page)
+    // Updates (opens the System › Updates sub-page). Only the OTA edition has
+    // the update service; the base edition shows nothing here.
     SectionCard {
         id: updatesCard
         Layout.fillWidth: true
+        visible: Updates.installed
         readonly property var us: Updates.status
         readonly property string summary: {
             if (!Updates.serviceAvailable) return qsTr("The update service isn't running")
