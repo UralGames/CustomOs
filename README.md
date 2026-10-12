@@ -78,6 +78,10 @@ Before the first OTA build, create the keys once:
 `release/keys/create-ota-keys.sh` (private keys stay in `~/.customos-signing/`,
 only the public certificate goes into `keys/`).
 
+While this repository is private, installed systems can't see its releases,
+and GitHub's free runners are probably too small for a full build. See
+[docs/RELEASING.md](docs/RELEASING.md) for both.
+
 **Live ISO vs. installed system.** The live session runs from read-only
 media and is never updated; install it to a disk to receive updates.
 CustomOS 0.1 installations use a single-partition layout and must be

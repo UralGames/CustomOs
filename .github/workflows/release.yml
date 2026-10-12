@@ -11,6 +11,8 @@
 #                           self-hosted or larger runner is recommended.
 #   CUSTOMOS_BUILD_TIMEOUT  job timeout in minutes (default 360, the maximum
 #                           for GitHub-hosted runners)
+#   CUSTOMOS_RELEASE_REPO   OWNER/NAME of a public repository to publish the
+#                           releases in (with secret CUSTOMOS_RELEASE_TOKEN)
 name: Release
 
 on:
@@ -98,8 +100,17 @@ jobs:
           path: release/out/
           retention-days: 14
 
+      # Releases go to this repository, or to the public repository named by
+      # the variable CUSTOMOS_RELEASE_REPO (needed while this one is private;
+      # docs/RELEASING.md). That needs the secret CUSTOMOS_RELEASE_TOKEN: a
+      # fine-grained token with "Contents: read and write" on it.
       - name: Publish the GitHub release
         if: github.ref_type == 'tag' || inputs.publish
         env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: release/publish-github-release.sh "release/out/v$(tr -d ' \n' < VERSION)"
+          GITHUB_TOKEN: ${{ vars.CUSTOMOS_RELEASE_REPO && secrets.CUSTOMOS_RELEASE_TOKEN || github.token }}
+          RELEASE_REPO: ${{ vars.CUSTOMOS_RELEASE_REPO || github.repository }}
+        run: |
+          target=()
+          # The tag of a release in another repository points at its default branch.
+          [ "$RELEASE_REPO" != "$GITHUB_REPOSITORY" ] && target=(--target "")
+          release/publish-github-release.sh "release/out/v$(tr -d ' \n' < VERSION)" --repo "$RELEASE_REPO" "${target[@]}"

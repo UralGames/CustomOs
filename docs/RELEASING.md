@@ -35,8 +35,10 @@ The workflow can also be started by hand (*Actions › Release › Run
 workflow*). It then publishes only if *publish* is ticked.
 
 **Build time.** A full build with Qt, Mesa and LLVM takes several hours.
-GitHub-hosted runners stop jobs after 6 hours; the caches make later builds
-much faster, but the first one may not fit. Options:
+GitHub-hosted runners stop jobs after 6 hours. The caches make later builds
+much faster, but the first one may not fit. It almost certainly won't in a
+**private** repository: its standard runners have 2 CPU cores, against 4
+for public repositories. Options:
 - a self-hosted runner: set the repository variable `CUSTOMOS_BUILD_RUNNER`
   to its label, and `CUSTOMOS_BUILD_TIMEOUT` (minutes) if needed;
 - a larger GitHub runner;
@@ -52,6 +54,22 @@ release/publish-github-release.sh release/out/v0.3.0          # uses gh, or $GIT
 ```
 
 `publish-github-release.sh --draft` leaves the release as a draft for review.
+
+**Private repository.** Installed systems check releases without signing
+in. GitHub answers *not found* for a private repository, so they can't see
+its releases. Before the first release, do one of these
+([OTA-UPDATES.md](OTA-UPDATES.md#configuration)):
+- make the repository public;
+- publish releases to a separate public repository (it needs at least one
+  commit, e.g. a README):
+  1. set `BR2_PACKAGE_CUSTOMOS_UPDATER_REPOSITORY` to it;
+  2. in this repository's Actions settings, set the variable
+     `CUSTOMOS_RELEASE_REPO` to `OWNER/NAME`;
+  3. set the secret `CUSTOMOS_RELEASE_TOKEN` to a fine-grained token with
+     *Contents: read and write* on that repository.
+
+  Locally, use `publish-github-release.sh --repo OWNER/NAME --target ""`;
+- give each computer a read-only token.
 
 ## 3. After publishing
 
