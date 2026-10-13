@@ -1,0 +1,91 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Andrew Tridgell <andrew@tridgell.net>
+Date: Sat, 6 Jun 2026 15:37:25 +1000
+Subject: [PATCH] build: openat2 autodetect
+
+configure now probes for <linux/openat2.h> + SYS_openat2 and defines
+HAVE_OPENAT2 only when both are present; syscall.c gates the openat2
+include and the openat2(RESOLVE_BENEATH) tier on HAVE_OPENAT2, so the
+build no longer fails on kernels/headers that lack the openat2 header
+(3.4.3 included it unconditionally on Linux).
+
+Without HAVE_OPENAT2, secure_relative_open() uses rsync's portable
+per-component O_NOFOLLOW resolver, as it already did on Linux kernels
+older than 5.6 (openat2 returning ENOSYS).
+
+CustomOS: needed because the Bootlin x86-64-v2 glibc "stable" toolchain
+ships Linux 5.4 headers, which have no <linux/openat2.h>. Backported from
+rsync 3.4.4 without the Android seccomp probe (android.c, Makefile.in),
+which does not apply here. Drop this patch once Buildroot packages rsync
+3.4.4 or later.
+
+Upstream: https://github.com/RsyncProject/rsync/commit/c14e2258b59a3f16a99c6e83a28660ba438a73e9
+---
+ configure.ac | 22 ++++++++++++++++++++++
+ syscall.c    |  6 +++---
+ 2 files changed, 25 insertions(+), 3 deletions(-)
+
+diff --git a/configure.ac b/configure.ac
+index 75a38e5..a9531a9 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -331,6 +331,28 @@ AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[ ]], [[return 0;]])],
+ CFLAGS="$OLD_CFLAGS"
+ AC_SUBST(NOEXECSTACK)
+ 
++dnl Only define HAVE_OPENAT2 when both the <linux/openat2.h> header and the
++dnl SYS_openat2 syscall number are present.  syscall.c uses openat2(RESOLVE_BENEATH)
++dnl for the secure resolver on Linux 5.6+; defining it unconditionally broke the
++dnl build on older kernels/headers that lack the header (#924, #905, #900).
++AC_CACHE_CHECK([for openat2],rsync_cv_HAVE_OPENAT2,[
++    AC_COMPILE_IFELSE([
++        AC_LANG_PROGRAM([[
++#include <sys/syscall.h>
++#include <linux/openat2.h>
++]], [[
++struct open_how how;
++how.resolve = RESOLVE_BENEATH;
++return SYS_openat2 + (int)how.resolve;
++]])
++    ],
++    [rsync_cv_HAVE_OPENAT2=yes], [rsync_cv_HAVE_OPENAT2=no])
++])
++if test x"$rsync_cv_HAVE_OPENAT2" = x"yes"; then
++  AC_DEFINE([HAVE_OPENAT2], 1,
++    [Define to use Linux openat2(RESOLVE_BENEATH) in secure_relative_open where available.])
++fi
++
+ # arrgh. libc in some old debian version screwed up the largefile
+ # stuff, getting byte range locking wrong
+ AC_CACHE_CHECK([for broken largefile support],rsync_cv_HAVE_BROKEN_LARGEFILE,[
+diff --git a/syscall.c b/syscall.c
+index e317bcc..771f72f 100644
+--- a/syscall.c
++++ b/syscall.c
+@@ -33,7 +33,7 @@
+ #include <sys/syscall.h>
+ #endif
+ 
+-#ifdef __linux__
++#if defined(__linux__) && defined(HAVE_OPENAT2)
+ #include <sys/syscall.h>
+ #include <linux/openat2.h>
+ #endif
+@@ -1691,7 +1691,7 @@ static int path_has_dotdot_component(const char *path)
+ 	return 0;
+ }
+ 
+-#ifdef __linux__
++#if defined(__linux__) && defined(HAVE_OPENAT2)
+ static int secure_relative_open_linux(const char *basedir, const char *relpath, int flags, mode_t mode)
+ {
+ 	struct open_how how;
+@@ -1791,7 +1791,7 @@ int secure_relative_open(const char *basedir, const char *relpath, int flags, mo
+ 		return -1;
+ 	}
+ 
+-#ifdef __linux__
++#if defined(__linux__) && defined(HAVE_OPENAT2)
+ 	{
+ 		int fd = secure_relative_open_linux(basedir, relpath, flags, mode);
+ 		/* ENOSYS = kernel < 5.6 doesn't have the syscall even though
