@@ -9,6 +9,8 @@ BR2_TOOLCHAIN_EXTERNAL_BOOTLIN=y
 BR2_TOOLCHAIN_EXTERNAL_BOOTLIN_X86_64_V2_GLIBC_STABLE=y
 BR2_CCACHE=y
 BR2_REPRODUCIBLE=y
+# Fixes for Buildroot's own packages: br2-external/patches/<package>/<version>/
+BR2_GLOBAL_PATCH_DIR="$(BR2_EXTERNAL_CUSTOMOS_PATH)/patches"
 
 # ---- System ------------------------------------------------------------------
 BR2_TARGET_GENERIC_HOSTNAME="customos"

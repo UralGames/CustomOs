@@ -18,7 +18,7 @@ What changed in files the existing build reads:
 
 | File | Change | Effect on a build in progress |
 |---|---|---|
-| `configs/customos_x86_64_defconfig` | none | – |
+| `configs/customos_x86_64_defconfig` | `BR2_GLOBAL_PATCH_DIR` added: rsync 3.4.3 is patched to build with the toolchain's Linux 5.4 headers (see below) | none until the configuration is applied again |
 | `board/customos/linux.fragment`, `post-image.sh` | none | – |
 | `package/meridian-desktop/Config.in` | Kconfig loop fixed (`select` instead of `depends on` linux-pam) | none: the resolved `.config` is **identical** before and after the fix (compared with `diff`). The old file printed `recursive dependency detected!`, which Kconfig reports but tolerates |
 | `br2-external/Config.in` | adds the `customos-updater` package | none: it is off unless selected |
@@ -36,6 +36,23 @@ harmless:
   own; `make … meridian-desktop-rebuild all` picks them up. Only
   `post-build.sh` runs again, and it writes the version from `VERSION`
   (`0.2.0`) into `/etc/os-release`.
+
+### If your build stopped at rsync
+
+`syscall.c:38:10: fatal error: linux/openat2.h: No such file or directory`
+comes from rsync 3.4.3, which needs kernel headers from Linux 5.6 or newer. The
+Bootlin toolchain in the configuration has Linux 5.4 headers.
+`br2-external/patches/rsync/3.4.3/` holds the upstream fix (from rsync 3.4.4).
+To use it in an existing `output/`:
+
+```sh
+make -C buildroot O=$PWD/output BR2_EXTERNAL=$PWD/br2-external customos_x86_64_defconfig
+make -C buildroot O=$PWD/output rsync-dirclean all
+```
+
+The first line applies the configuration again. Packages already built are
+kept. `rsync-dirclean` removes only rsync's half-built directory, so it is
+extracted and patched again.
 
 ## 2. Building the OTA edition for the first time
 

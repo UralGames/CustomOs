@@ -132,6 +132,7 @@ br2-external/               Buildroot external tree = the distribution definitio
     labwc, libsfdo          compositor/window manager and its icon library
     layer-shell-qt, extra-cmake-modules   Qt layer-shell support for the shell
     swaylock, grim          screen lock and screenshots
+  patches/                  fixes for Buildroot's own packages (BR2_GLOBAL_PATCH_DIR)
 desktop/                    the Meridian desktop (CMake, Qt 6.5+)
   core/ style/              shared library, services, QML controls style
   shell/                    taskbar, start menu, panels, notifications (layer-shell client)

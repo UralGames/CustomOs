@@ -123,9 +123,16 @@ jobs:
             result="timeout"
           else
             result="failed"
+            # The failing step and its first error, for this log, the job
+            # summary and an annotation on the run's page.
+            python3 .github/scripts/build-failure-summary.py "$log" \
+              --markdown "$CUSTOMOS_WORK/failure.md" --annotate || true
             echo "::group::Last 150 lines of the build log"
             tail -n 150 "$log"
             echo "::endgroup::"
+          fi
+          if [ "$result" = timeout ]; then
+            grep -a '>>> ' "$log" | tail -n 1 | sed 's/\x1b\[[0-9;]*m//g; s/^>>> *//' > "$CUSTOMOS_WORK/last-step.txt" || true
           fi
           echo "build.sh exit code $rc: $result"
           echo "result=$result" >> "$GITHUB_OUTPUT"
@@ -191,14 +198,23 @@ jobs:
                 echo
                 echo "Boot it in VirtualBox: [docs/VM-SETUP.md]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/$GITHUB_SHA/docs/VM-SETUP.md) (4 GB RAM, VMSVGA graphics)." ;;
               timeout)
+                if [ -s "$CUSTOMOS_WORK/last-step.txt" ]; then
+                  echo "Stopped during \`$(cat "$CUSTOMOS_WORK/last-step.txt")\`."
+                  echo
+                fi
                 if [ "$LAST" = true ]; then
                   echo "Out of time in the last job. Run the workflow again: it continues from the saved compiler cache."
                 else
                   echo "Out of time; the next job continues from the saved compiler cache."
                 fi ;;
               failed)
-                echo "The build stopped with an error. The last lines are in this job's log under"
-                echo "*Build CustomOS-x86_64.iso*; the full log is the artifact *build-log-job$ATTEMPT*." ;;
+                if [ -s "$CUSTOMOS_WORK/failure.md" ]; then
+                  cat "$CUSTOMOS_WORK/failure.md"
+                else
+                  echo "The build stopped with an error; see the step *Build CustomOS-x86_64.iso* in this job's log."
+                  echo
+                fi
+                echo "The full log is the artifact *build-log-job$ATTEMPT* (xz-compressed)." ;;
             esac
           } >> "$GITHUB_STEP_SUMMARY"
 
