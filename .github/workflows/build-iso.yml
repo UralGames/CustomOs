@@ -31,9 +31,11 @@ on:
       - br2-external/external.*
       - br2-external/configs/customos_x86_64_defconfig
       - br2-external/package/**
+      - br2-external/patches/**
       - br2-external/board/customos/linux.fragment
       - .github/workflows/build-iso.yml
       - .github/workflows/build-iso-attempt.yml
+      - .github/scripts/**
 
 permissions:
   contents: read
@@ -151,10 +153,89 @@ jobs:
           path: dl
           key: ${{ steps.dl.outputs.cache-primary-key }}
 
+  # Packages that CustomOS patches (br2-external/patches/<package>/) are
+  # built first with the real toolchain: a patch that no longer applies or
+  # compiles shows up in minutes, not hours into the full build.
+  patched-packages:
+    name: Build the patched packages
+
+    needs: sources
+
+    runs-on: ${{ vars.CUSTOMOS_BUILD_RUNNER || 'ubuntu-24.04' }}
+
+    timeout-minutes: 90
+
+    env:
+      BR2_DL_DIR: ${{ github.workspace }}/dl
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install host packages
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends \
+            build-essential \
+            bc \
+            cpio \
+            file \
+            git \
+            libncurses-dev \
+            perl \
+            python3 \
+            rsync \
+            unzip \
+            wget \
+            xz-utils \
+            bzip2 \
+            zstd
+
+          mkdir -p "$BR2_DL_DIR"
+
+      - name: Restore source downloads
+        uses: actions/cache/restore@v4
+        with:
+          path: dl
+          key: buildroot-dl-iso-${{ hashFiles('build.sh', 'br2-external/configs/customos_x86_64_defconfig', 'br2-external/package/**') }}
+          restore-keys: |
+            buildroot-dl-iso-
+
+      - name: Build each patched package
+        run: |
+          pkgs=""
+          for dir in br2-external/patches/*/; do
+            [ -d "$dir" ] && pkgs="$pkgs $(basename "$dir")"
+          done
+          if [ -z "$pkgs" ]; then
+            echo "No package has CustomOS patches."
+            exit 0
+          fi
+
+          echo "### Patched packages" >> "$GITHUB_STEP_SUMMARY"
+
+          # Configures output/ and checks that all sources are present.
+          ./build.sh --source > source.log 2>&1 || { tail -n 50 source.log; exit 1; }
+
+          for pkg in $pkgs; do
+            echo "::group::$pkg"
+            if ! make -C buildroot O="$PWD/output" BR2_JLEVEL="$(nproc)" "$pkg" > "build-$pkg.log" 2>&1; then
+              echo "::endgroup::"
+              python3 .github/scripts/build-failure-summary.py "build-$pkg.log" \
+                --markdown "$GITHUB_STEP_SUMMARY" --annotate
+              exit 1
+            fi
+            grep -a '>>> ' "build-$pkg.log" | sed 's/\x1b\[[0-9;]*m//g'
+            echo "::endgroup::"
+            echo "- \`$pkg\` builds with the CustomOS patches" >> "$GITHUB_STEP_SUMMARY"
+          done
+
   build-1:
     name: Build (job 1)
 
-    needs: sources
+    needs:
+      - sources
+      - patched-packages
 
     if: github.event_name == 'workflow_dispatch'
 
